@@ -38,6 +38,30 @@ enum class ECesiumFeatureTableAccessType : uint8 {
   Mixed
 };
 
+/**
+ * The transformation to apply to each property value to prepare it for use in a
+ * Material.
+ */
+UENUM()
+enum class ECesiumPropertyTransformation : uint8 {
+  /**
+   * Simply coerce (cast, parse) the value to the appropriate type.
+   * For example, a string with the value "1.23" can be coerced to
+   * a Float by parsing the string.
+   */
+  Coerce,
+
+  /**
+   * Interpret the string as a color. This best used with a "Vec3" or "Vec4"
+   * property type and a component type of Uint8. Supported formats:
+   *   * "rgb(100, 125, 40)" (values are red, green, blue in the range 0-255)
+   *   * more to come in the future!
+   */
+  ParseColor
+
+  // In the future: Custom, which invokes a Blueprint?!
+};
+
 // Note that these don't exhaustively cover the possibilities of glTF metadata
 // classes, they only cover the subset that can be encoded into textures. For
 // example, arbitrary size arrays and enums are excluded. Other un-encoded
@@ -83,6 +107,14 @@ struct CESIUMRUNTIME_API FPropertyDescription {
           (EditCondition =
                "ComponentType==ECesiumPropertyComponentType::Uint8"))
   bool Normalized = false;
+
+  /**
+   * The transformation to apply to each property value to prepare it for use
+   * in a Material.
+   */
+  UPROPERTY(EditAnywhere, Category = "Cesium")
+  ECesiumPropertyTransformation Transformation =
+      ECesiumPropertyTransformation::Coerce;
 };
 
 /**

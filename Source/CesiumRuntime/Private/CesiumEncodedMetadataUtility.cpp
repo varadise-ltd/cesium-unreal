@@ -103,16 +103,6 @@ EncodedMetadataFeatureTable encodeMetadataFeatureTableAnyThreadPart(
     bool isNormalized =
         UCesiumMetadataPropertyBlueprintLibrary::IsNormalized(property);
 
-    int64 componentCount;
-    if (isArray) {
-      trueType = UCesiumMetadataPropertyBlueprintLibrary::GetTrueComponentType(
-          property);
-      componentCount =
-          UCesiumMetadataPropertyBlueprintLibrary::GetComponentCount(property);
-    } else {
-      componentCount = 1;
-    }
-
     int32 expectedComponentCount = 1;
     switch (pExpectedProperty->Type) {
     // case ECesiumPropertyType::Scalar:
@@ -127,6 +117,19 @@ EncodedMetadataFeatureTable encodeMetadataFeatureTableAnyThreadPart(
     case ECesiumPropertyType::Vec4:
       expectedComponentCount = 4;
     };
+
+    int64 componentCount;
+    if (pExpectedProperty->Transformation ==
+        ECesiumPropertyTransformation::ParseColor) {
+      componentCount = expectedComponentCount;
+    } else if (isArray) {
+      trueType = UCesiumMetadataPropertyBlueprintLibrary::GetTrueComponentType(
+          property);
+      componentCount =
+          UCesiumMetadataPropertyBlueprintLibrary::GetComponentCount(property);
+    } else {
+      componentCount = 1;
+    }
 
     if (expectedComponentCount != componentCount) {
       UE_LOG(
@@ -223,7 +226,42 @@ EncodedMetadataFeatureTable encodeMetadataFeatureTableAnyThreadPart(
     void* pTextureData = pMip->BulkData.Realloc(
         ceilSqrtFeatureCount * ceilSqrtFeatureCount * encodedFormat.pixelSize);
 
-    if (isArray) {
+    if (pExpectedProperty->Transformation ==
+        ECesiumPropertyTransformation::ParseColor) {
+      uint8* pWritePos = reinterpret_cast<uint8*>(pTextureData);
+
+      TArray<FString> parts;
+      parts.Reserve(3);
+
+      for (int64 i = 0; i < featureCount; ++i) {
+        FString colorString =
+            UCesiumMetadataPropertyBlueprintLibrary::GetString(property, i);
+
+        uint8 color[3]{255, 255, 255};
+        if (colorString.StartsWith(TEXT("rgb(")) &&
+            colorString.EndsWith(TEXT(")"))) {
+          int partCount = colorString.Mid(4, colorString.Len() - 5)
+                              .ParseIntoArray(parts, TEXT(","), false);
+          if (partCount == 3) {
+            color[0] = FCString::Atoi(*parts[0]);
+            color[1] = FCString::Atoi(*parts[1]);
+            color[2] = FCString::Atoi(*parts[2]);
+          }
+        }
+
+        int64 num = std::min(
+            componentCount,
+            std::min(int64_t(encodedFormat.pixelSize), 3LL));
+        for (int64 j = 0; j < num; ++j) {
+          *pWritePos = color[j];
+          ++pWritePos;
+        }
+        for (int64 j = num; j < int64(encodedFormat.pixelSize); ++j) {
+          *pWritePos = 255;
+          ++pWritePos;
+        }
+      }
+    } else if (isArray) {
       switch (gpuType) {
       case ECesiumMetadataPackedGpuType::Uint8: {
         uint8* pWritePos = reinterpret_cast<uint8*>(pTextureData);
