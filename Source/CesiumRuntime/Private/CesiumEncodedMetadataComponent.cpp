@@ -554,8 +554,10 @@ void UCesiumEncodedMetadataComponent::GenerateMaterial() {
       FeatureTableLookup->Code += "uint _czm_width;\nuint _czm_height;\n";
       FeatureTableLookup->Code +=
           propertyArrayName + ".GetDimensions(_czm_width, _czm_height);\n";
-      FeatureTableLookup->Code += "uint _czm_pixelX = _czm_propertyIndex % _czm_width;\n";
-      FeatureTableLookup->Code += "uint _czm_pixelY = _czm_propertyIndex / _czm_width;\n";
+      FeatureTableLookup->Code +=
+          "uint _czm_pixelX = _czm_propertyIndex % _czm_width;\n";
+      FeatureTableLookup->Code +=
+          "uint _czm_pixelY = _czm_propertyIndex / _czm_width;\n";
     }
 
     NodeX = SectionLeft;
@@ -614,15 +616,16 @@ void UCesiumEncodedMetadataComponent::GenerateMaterial() {
 
       FeatureTableLookup->Code +=
           propertyName + " = " + componentTypeInterpretation + "(" +
-          propertyArrayName + ".Load(int3(_czm_pixelX, _czm_pixelY, 0))." + swizzle +
-          ");\n";
+          propertyArrayName + ".Load(int3(_czm_pixelX, _czm_pixelY, 0))." +
+          swizzle + ");\n";
 
       NodeY += IncrY;
     }
 
     FeatureTableLookup->OutputType = ECustomMaterialOutputType::CMOT_Float1;
 
-    FeatureTableLookup->Code += "float _czm_propertyIndexF = _czm_propertyIndex;\n";
+    FeatureTableLookup->Code +=
+        "float _czm_propertyIndexF = _czm_propertyIndex;\n";
     FeatureTableLookup->Code += "return _czm_propertyIndexF;";
 
     NodeX = SectionLeft;
