@@ -25,6 +25,7 @@
 #include "CesiumGltf/ImageCesium.h"
 #include "CesiumGltf/Ktx2TranscodeTargets.h"
 #include "CesiumGltfComponent.h"
+#include "CesiumGltfInstancedPrimitiveComponent.h"
 #include "CesiumGltfPrimitiveComponent.h"
 #include "CesiumLifetime.h"
 #include "CesiumRasterOverlay.h"
@@ -469,6 +470,13 @@ void ACesium3DTileset::UpdateTransformFromCesium() {
 
   for (UCesiumGltfComponent* pGltf : gltfComponents) {
     pGltf->UpdateTransformFromCesium(CesiumToUnreal);
+  }
+
+  TInlineComponentArray<UCesiumGltfInstancedPrimitiveComponent*> instancedPrimitiveComponents(
+      this);
+
+  for (UCesiumGltfInstancedPrimitiveComponent* pInstancedPrimitive : instancedPrimitiveComponents) {
+    pInstancedPrimitive->UpdateTransformFromCesium(CesiumToUnreal);
   }
 }
 

@@ -18,9 +18,11 @@
 #include "CesiumGltf/AccessorView.h"
 #include "CesiumGltf/ExtensionMeshPrimitiveExtFeatureMetadata.h"
 #include "CesiumGltf/ExtensionModelExtFeatureMetadata.h"
+#include "CesiumGltf/ExtensionExtMeshGpuInstancing.h"
 #include "CesiumGltf/PropertyType.h"
 #include "CesiumGltf/TextureInfo.h"
 #include "CesiumGltfPrimitiveComponent.h"
+#include "CesiumGltfInstancedPrimitiveComponent.h"
 #include "CesiumMaterialUserData.h"
 #include "CesiumRasterOverlays.h"
 #include "CesiumRuntime.h"
@@ -47,6 +49,7 @@
 #include <cstddef>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/matrix_operation.hpp>
 #include <glm/mat3x3.hpp>
 #include <iostream>
 
@@ -1155,6 +1158,9 @@ static void loadPrimitive(
   LODResources.bHasAdjacencyInfo = false;
 #endif
 
+  primitiveResult.instanceAttributes = 
+      options.pMeshOptions->instanceAttributes;
+
   primitiveResult.pModel = &model;
   primitiveResult.pMeshPrimitive = &primitive;
   primitiveResult.RenderData = std::move(RenderData);
@@ -1366,11 +1372,8 @@ static void loadNode(
   }
 
   if (matrix.size() == 16 && !isIdentityMatrix) {
-    glm::dmat4x4 nodeTransformGltf(
-        glm::dvec4(matrix[0], matrix[1], matrix[2], matrix[3]),
-        glm::dvec4(matrix[4], matrix[5], matrix[6], matrix[7]),
-        glm::dvec4(matrix[8], matrix[9], matrix[10], matrix[11]),
-        glm::dvec4(matrix[12], matrix[13], matrix[14], matrix[15]));
+    const glm::dmat4& nodeTransformGltf =
+        *reinterpret_cast<const glm::dmat4*>(matrix.data());
 
     nodeTransform = nodeTransform * nodeTransformGltf;
   } else {
@@ -1402,10 +1405,35 @@ static void loadNode(
         nodeTransform * translation * glm::dmat4(rotationQuat) * scale;
   }
 
+  std::optional<LoadGltfResult::InstanceAttributes> instanceAttributes;
+  const CesiumGltf::ExtensionExtMeshGpuInstancing* pInstancingExtension =
+      node.getExtension<ExtensionExtMeshGpuInstancing>();
+  if (pInstancingExtension) {
+    auto instanceTranslationsIt =
+        pInstancingExtension->attributes.find("TRANSLATION");
+    auto instanceRotationsIt =
+        pInstancingExtension->attributes.find("ROTATION");
+    auto instanceScaleIt = pInstancingExtension->attributes.find("SCALE");
+
+    if (instanceTranslationsIt != pInstancingExtension->attributes.end() &&
+        instanceRotationsIt != pInstancingExtension->attributes.end() &&
+        instanceScaleIt != pInstancingExtension->attributes.end()) {
+      instanceAttributes = {
+        instanceTranslationsIt->second,
+        instanceRotationsIt->second,
+        instanceScaleIt->second};
+    }
+  }
+
   int meshId = node.mesh;
   if (meshId >= 0 && meshId < model.meshes.size()) {
-    CreateMeshOptions meshOptions = {&options, &result, &model.meshes[meshId]};
-    loadMesh(result.meshResult, nodeTransform, meshOptions);
+    CreateMeshOptions meshOptions = {
+        &options,
+        &result,
+        &model.meshes[meshId],
+        instanceAttributes};
+    result.meshResult.emplace();
+    loadMesh(*result.meshResult, nodeTransform, meshOptions);
   }
 
   for (int childNodeId : node.children) {
@@ -1791,19 +1819,19 @@ static void SetMetadataParameterValues(
   }
 }
 
-static void loadPrimitiveGameThreadPart(
+template<typename TCesiumPrimitiveComponent>
+static TCesiumPrimitiveComponent* loadPrimitiveGameThreadPart(
+    // TODO: I don't think this pGltf is needed after a few simplifications
     UCesiumGltfComponent* pGltf,
-    LoadPrimitiveResult& loadResult,
-    const glm::dmat4x4& cesiumToUnrealTransform,
-    const Cesium3DTilesSelection::BoundingVolume& boundingVolume) {
+    USceneComponent* pOutter,
+    LoadPrimitiveResult& loadResult) {
   FName meshName = createSafeName(loadResult.name, "");
-  UCesiumGltfPrimitiveComponent* pMesh =
-      NewObject<UCesiumGltfPrimitiveComponent>(pGltf, meshName);
+  TCesiumPrimitiveComponent* pMesh =
+      NewObject<TCesiumPrimitiveComponent>(pOutter, meshName);
   pMesh->overlayTextureCoordinateIDToUVIndex =
       loadResult.overlayTextureCoordinateIDToUVIndex;
   pMesh->textureCoordinateMap = std::move(loadResult.textureCoordinateMap);
   pMesh->HighPrecisionNodeTransform = loadResult.transform;
-  pMesh->UpdateTransformFromCesium(cesiumToUnrealTransform);
 
   pMesh->bUseDefaultCollision = false;
   pMesh->SetCollisionObjectType(ECollisionChannel::ECC_WorldStatic);
@@ -1999,6 +2027,71 @@ static void loadPrimitiveGameThreadPart(
   pMesh->RegisterComponent();
 }
 
+static void createInstancedPrimitives(
+    const CesiumGltf::Model& model,
+    const glm::dmat4& cesiumToUnreal,
+    const LoadGltfResult::InstanceAttributes& instanceAttributes,
+    UCesiumGltfInstancedPrimitiveComponent& instancedComponent) {
+
+  // TODO: handle quantized positions as well
+
+  CesiumGltf::AccessorView<glm::vec3> translationAccessor(
+      model,
+      instanceAttributes.translationAccessorId);
+
+  CesiumGltf::AccessorView<glm::quat> rotationAccessor(
+      model,
+      instanceAttributes.rotationAccessorId);
+
+  CesiumGltf::AccessorView<glm::vec3> scaleAccessor(
+      model,
+      instanceAttributes.scaleAccessorId);
+
+  if (translationAccessor.status() != CesiumGltf::AccessorViewStatus::Valid ||
+      rotationAccessor.status() != CesiumGltf::AccessorViewStatus::Valid ||
+      scaleAccessor.status() != CesiumGltf::AccessorViewStatus::Valid) {
+    return;
+  }
+
+  int64_t instanceCount = translationAccessor.size();
+  instancedComponent.InstanceTransforms.resize(instanceCount);
+
+  for (int64_t i = 0; i < instanceCount; ++i) {
+    const glm::vec3& translation = translationAccessor[i];
+    const glm::quat& rotation = rotationAccessor[i];
+    const glm::vec3& scale = scaleAccessor[i];
+
+    glm::dmat4& instanceTransform =
+        instancedComponent.InstanceTransforms[i];
+    instanceTransform = glm::mat4(glm::mat3(rotation) * glm::diagonal3x3(scale));
+    instanceTransform[3] =
+        glm::dvec4(translation.x, translation.y, translation.z, 1.0);
+
+    glm::dmat4 instanceToUnreal =
+        cesiumToUnreal * 
+        instancedComponent.HighPrecisionNodeTransform * 
+        instanceTransform;
+
+    instancedComponent.AddInstanceWorldSpace(FTransform(FMatrix(
+        FVector(
+            instanceToUnreal[0].x,
+            instanceToUnreal[0].y,
+            instanceToUnreal[0].z),
+        FVector(
+            instanceToUnreal[1].x,
+            instanceToUnreal[1].y,
+            instanceToUnreal[1].z),
+        FVector(
+            instanceToUnreal[2].x,
+            instanceToUnreal[2].y,
+            instanceToUnreal[2].z),
+        FVector(
+            instanceToUnreal[3].x,
+            instanceToUnreal[3].y,
+            instanceToUnreal[3].z))));
+  }
+}
+
 /*static*/ TUniquePtr<UCesiumGltfComponent::HalfConstructed>
 UCesiumGltfComponent::CreateOffGameThread(
     const glm::dmat4x4& Transform,
@@ -2047,11 +2140,26 @@ UCesiumGltfComponent::CreateOffGameThread(
   for (LoadNodeResult& node : pReal->loadModelResult.nodeResults) {
     if (node.meshResult) {
       for (LoadPrimitiveResult& primitive : node.meshResult->primitiveResults) {
-        loadPrimitiveGameThreadPart(
-            Gltf,
-            primitive,
-            cesiumToUnrealTransform,
-            boundingVolume);
+        if (primitive.instanceAttributes) {
+          UCesiumGltfInstancedPrimitiveComponent* pInstancedComponent = 
+              loadPrimitiveGameThreadPart<UCesiumGltfInstancedPrimitiveComponent>(
+                Gltf,
+                Gltf,
+                primitive);
+          createInstancedPrimitives(
+              *primitive.pModel,
+              cesiumToUnrealTransform,
+              *primitive.instanceAttributes,
+              *pInstancedComponent);
+        } else {
+          UCesiumGltfPrimitiveComponent* pPrimitiveComponent =
+              loadPrimitiveGameThreadPart<UCesiumGltfPrimitiveComponent>(
+                Gltf,
+                Gltf,
+                primitive);
+          pPrimitiveComponent->UpdateTransformFromCesium(
+              cesiumToUnrealTransform);
+        }
       }
     }
   }
@@ -2260,6 +2368,102 @@ void UCesiumGltfComponent::SetCollisionEnabled(
     if (pPrimitive) {
       pPrimitive->SetCollisionEnabled(NewType);
     }
+  }
+}
+
+namespace {
+
+void destroyMaterialTexture(
+    UMaterialInstanceDynamic* pMaterial,
+    const char* name,
+    EMaterialParameterAssociation assocation,
+    int32 index) {
+  UTexture* pTexture = nullptr;
+  if (pMaterial->GetTextureParameterValue(
+          FMaterialParameterInfo(name, assocation, index),
+          pTexture,
+          true)) {
+    CesiumLifetime::destroy(pTexture);
+  }
+}
+
+void destroyGltfParameterValues(
+    UMaterialInstanceDynamic* pMaterial,
+    EMaterialParameterAssociation assocation,
+    int32 index) {
+  destroyMaterialTexture(pMaterial, "baseColorTexture", assocation, index);
+  destroyMaterialTexture(
+      pMaterial,
+      "metallicRoughnessTexture",
+      assocation,
+      index);
+  destroyMaterialTexture(pMaterial, "normalTexture", assocation, index);
+  destroyMaterialTexture(pMaterial, "emissiveTexture", assocation, index);
+  destroyMaterialTexture(pMaterial, "occlusionTexture", assocation, index);
+}
+
+void destroyWaterParameterValues(
+    UMaterialInstanceDynamic* pMaterial,
+    EMaterialParameterAssociation assocation,
+    int32 index) {
+  destroyMaterialTexture(pMaterial, "WaterMask", assocation, index);
+}
+} // namespace
+
+void UCesiumGltfComponent::DestroyPrimitiveComponent(
+    UStaticMeshComponent* PrimitiveComponent) {
+  // This should mirror the logic in loadPrimitiveGameThreadPart
+  UMaterialInstanceDynamic* pMaterial =
+      Cast<UMaterialInstanceDynamic>(PrimitiveComponent->GetMaterial(0));
+  if (pMaterial) {
+
+    destroyGltfParameterValues(
+        pMaterial,
+        EMaterialParameterAssociation::GlobalParameter,
+        INDEX_NONE);
+    destroyWaterParameterValues(
+        pMaterial,
+        EMaterialParameterAssociation::GlobalParameter,
+        INDEX_NONE);
+
+    UMaterialInterface* pBaseMaterial = pMaterial->Parent;
+    UMaterialInstance* pBaseAsMaterialInstance =
+        Cast<UMaterialInstance>(pBaseMaterial);
+    UCesiumMaterialUserData* pCesiumData =
+        pBaseAsMaterialInstance
+            ? pBaseAsMaterialInstance
+                  ->GetAssetUserData<UCesiumMaterialUserData>()
+            : nullptr;
+    if (pCesiumData) {
+      destroyGltfParameterValues(
+          pMaterial,
+          EMaterialParameterAssociation::LayerParameter,
+          0);
+
+      int32 waterIndex = pCesiumData->LayerNames.Find("Water");
+      if (waterIndex >= 0) {
+        destroyWaterParameterValues(
+            pMaterial,
+            EMaterialParameterAssociation::LayerParameter,
+            waterIndex);
+      }
+    }
+
+    CesiumLifetime::destroy(pMaterial);
+  }
+
+  UStaticMesh* pMesh = PrimitiveComponent->GetStaticMesh();
+  if (pMesh) {
+#if ENGINE_MAJOR_VERSION == 4 && ENGINE_MINOR_VERSION < 27
+    UBodySetup* pBodySetup = pMesh->BodySetup;
+#else
+    UBodySetup* pBodySetup = pMesh->GetBodySetup();
+#endif
+    if (pBodySetup) {
+      CesiumLifetime::destroy(pBodySetup);
+    }
+
+    CesiumLifetime::destroy(pMesh);
   }
 }
 

@@ -38,7 +38,14 @@ struct PxTriangleMeshDeleter {
 
 // TODO: internal documentation
 namespace LoadGltfResult {
+struct InstanceAttributes {
+  int32_t translationAccessorId = -1;
+  int32_t rotationAccessorId = -1;
+  int32_t scaleAccessorId = -1;
+};
+
 struct LoadPrimitiveResult {
+  std::optional<InstanceAttributes> instanceAttributes{};
   FCesiumMetadataPrimitive Metadata{};
   CesiumEncodedMetadataUtility::EncodedMetadataPrimitive EncodedMetadata{};
   TMap<FString, uint32_t> metadataTextureCoordinateParameters;

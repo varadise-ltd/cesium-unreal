@@ -76,6 +76,8 @@ public:
       FCustomDepthParameters CustomDepthParameters,
       const Cesium3DTilesSelection::BoundingVolume& boundingVolume);
 
+  static void DestroyPrimitiveComponent(UStaticMeshComponent* PrimitiveComponent);
+
   UCesiumGltfComponent();
   virtual ~UCesiumGltfComponent();
 
