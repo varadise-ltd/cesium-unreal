@@ -934,18 +934,21 @@ void ACesium3DTileset::LoadTileset() {
     }
   }
 
-  if (this->Url.Len() > 0) {
+  switch (this->TilesetSource) {
+  case ETilesetSource::FromUrl:
     UE_LOG(
-        LogCesium,
-        Log,
-        TEXT("Loading tileset from URL %s done"),
-        *this->Url);
-  } else {
+      LogCesium,
+      Log,
+      TEXT("Loading tileset from URL %s done"),
+      *this->Url);
+    break;
+  case ETilesetSource::FromCesiumIon:
     UE_LOG(
-        LogCesium,
-        Log,
-        TEXT("Loading tileset for asset ID %d done"),
-        this->IonAssetID);
+      LogCesium,
+      Log,
+      TEXT("Loading tileset for asset ID %d done"),
+      this->IonAssetID);
+    break;
   }
 }
 
