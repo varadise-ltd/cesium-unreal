@@ -1449,21 +1449,27 @@ void hideTilesToNoLongerRender(
 void applyActorCollisionSettings(
     const FBodyInstance& BodyInstance,
     UCesiumGltfComponent* Gltf) {
-  UCesiumGltfPrimitiveComponent* PrimitiveComponent =
-      static_cast<UCesiumGltfPrimitiveComponent*>(Gltf->GetChildComponent(0));
-  if (PrimitiveComponent != nullptr) {
-    if (PrimitiveComponent->GetCollisionObjectType() !=
-        BodyInstance.GetObjectType()) {
-      PrimitiveComponent->SetCollisionObjectType(BodyInstance.GetObjectType());
-    }
-    const UEnum* ChannelEnum = StaticEnum<ECollisionChannel>();
-    if (ChannelEnum) {
-      FCollisionResponseContainer responseContainer =
-          BodyInstance.GetResponseToChannels();
-      PrimitiveComponent->SetCollisionResponseToChannels(responseContainer);
+  for (USceneComponent* Child : Gltf->GetAttachChildren()) {
+    if (Child) {
+      UCesiumGltfPrimitiveComponent* PrimitiveComponent =
+          static_cast<UCesiumGltfPrimitiveComponent*>(Child);
+      if (PrimitiveComponent != nullptr) {
+        if (PrimitiveComponent->GetCollisionObjectType() !=
+            BodyInstance.GetObjectType()) {
+          PrimitiveComponent->SetCollisionObjectType(
+              BodyInstance.GetObjectType());
+        }
+        const UEnum* ChannelEnum = StaticEnum<ECollisionChannel>();
+        if (ChannelEnum) {
+          FCollisionResponseContainer responseContainer =
+              BodyInstance.GetResponseToChannels();
+          PrimitiveComponent->SetCollisionResponseToChannels(responseContainer);
+        }
+      }
     }
   }
 }
+
 } // namespace
 
 void ACesium3DTileset::updateTilesetOptionsFromProperties() {
