@@ -1,5 +1,17 @@
 # Change Log
 
+### ? - ?
+
+##### Additions :tada:
+
+- Improved the dithered transition between levels-of-detail, making it faster and eliminating depth fighting.
+- Add an option on the `Cesium3DTileset` to change the tileset's mobility. This allows users to make tileset movable at runtime, if needed.  
+
+##### Fixes :wrench:
+
+- Fixed a bug where collision settings were only being applied to the first primitive in a glTF.
+- Fixed a bug where the Screen Credits Decorator prevented the Rich Text Block Image Decorator from working.
+
 ### v1.17.0 - 2022-09-01
 
 ##### Additions :tada:
