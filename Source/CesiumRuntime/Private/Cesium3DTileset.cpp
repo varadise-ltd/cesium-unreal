@@ -880,7 +880,7 @@ void ACesium3DTileset::LoadTileset() {
             "Cesium for Unreal has enabled the \"Enable Large Worlds\" option in this world's settings, as it is required in order to avoid serious culling problems with Cesium3DTilesets in Unreal Engine 5."),
         *this->Url);
   }
-  
+
   const TSharedRef<CesiumViewExtension, ESPMode::ThreadSafe>&
       cesiumViewExtension = getCesiumViewExtension();
   const std::shared_ptr<CesiumAsync::IAssetAccessor>& pAssetAccessor =
