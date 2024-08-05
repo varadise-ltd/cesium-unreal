@@ -2,10 +2,12 @@
 
 #include "CesiumFeatureIdSet.h"
 #include "CesiumGltf/Accessor.h"
+#include "CesiumGltf/ExtensionExtInstanceFeaturesFeatureId.h"
 #include "CesiumGltf/ExtensionModelExtStructuralMetadata.h"
 #include "CesiumGltf/FeatureId.h"
 #include "CesiumGltf/Model.h"
 #include "CesiumGltfPrimitiveComponent.h"
+#include "CesiumInstanceFeatures.h"
 
 using namespace CesiumGltf;
 
@@ -60,6 +62,44 @@ FCesiumFeatureIdSet::FCesiumFeatureIdSet(
 
   if (_featureCount > 0) {
     _featureIDSetType = ECesiumFeatureIdSetType::Implicit;
+  }
+}
+
+FCesiumFeatureIdSet::FCesiumFeatureIdSet(
+    const Model& InModel,
+    const Node& Node,
+    const ExtensionExtInstanceFeaturesFeatureId& InstanceFeatureID)
+    : _featureID(),
+      _featureIDSetType(ECesiumFeatureIdSetType::Instance),
+      _featureCount(InstanceFeatureID.featureCount),
+      _nullFeatureID(InstanceFeatureID.nullFeatureId.value_or(-1)),
+      _propertyTableIndex(InstanceFeatureID.propertyTable.value_or(-1)),
+      _label(FString(InstanceFeatureID.label.value_or("").c_str())) {
+  FString propertyTableName;
+
+  // For backwards compatibility with GetFeatureTableName.
+  const ExtensionModelExtStructuralMetadata* pMetadata =
+      InModel.getExtension<ExtensionModelExtStructuralMetadata>();
+  if (pMetadata && _propertyTableIndex >= 0) {
+    size_t index = static_cast<size_t>(_propertyTableIndex);
+    if (index < pMetadata->propertyTables.size()) {
+      const PropertyTable& propertyTable = pMetadata->propertyTables[index];
+      std::string name = propertyTable.name.value_or("");
+      propertyTableName = FString(name.c_str());
+    }
+  }
+
+  if (InstanceFeatureID.attribute) {
+    _featureID = FCesiumFeatureIdAttribute(
+        InModel,
+        Node,
+        *InstanceFeatureID.attribute,
+        propertyTableName);
+    return;
+  }
+
+  if (_featureCount > 0) {
+    _featureIDSetType = ECesiumFeatureIdSetType::InstanceImplicit;
   }
 }
 
@@ -137,6 +177,34 @@ int64 UCesiumFeatureIdSetBlueprintLibrary::GetFeatureIDForVertex(
   return -1;
 }
 
+namespace {
+struct FeatureIdFromAccessorView : public FeatureIdFromAccessor {
+  FeatureIdFromAccessorView(int64_t index_) { index = index_; }
+
+  int64_t operator()(std::monostate) { return -1; }
+};
+} // namespace
+
+int64 UCesiumFeatureIdSetBlueprintLibrary::GetFeatureIDForInstance(
+    UPARAM(ref) const FCesiumFeatureIdSet& FeatureIDSet,
+    int64 InstanceIndex) {
+  ECesiumFeatureIdSetType type = FeatureIDSet._featureIDSetType;
+  if (type == ECesiumFeatureIdSetType::InstanceImplicit) {
+    return InstanceIndex;
+  } else if (
+      type != ECesiumFeatureIdSetType::Instance ||
+      !std::holds_alternative<FCesiumFeatureIdAttribute>(
+          FeatureIDSet._featureID) ||
+      InstanceIndex < 0) {
+    return -1;
+  }
+  const auto& featureIdAttribute =
+      std::get<FCesiumFeatureIdAttribute>(FeatureIDSet._featureID);
+  return UCesiumFeatureIdAttributeBlueprintLibrary::GetFeatureIDForVertex(
+      featureIdAttribute,
+      InstanceIndex);
+}
+
 int64 UCesiumFeatureIdSetBlueprintLibrary::GetFeatureIDFromHit(
     UPARAM(ref) const FCesiumFeatureIdSet& FeatureIDSet,
     const FHitResult& Hit) {
@@ -148,6 +216,18 @@ int64 UCesiumFeatureIdSetBlueprintLibrary::GetFeatureIDFromHit(
         Hit);
   }
 
+  {
+    const auto* pInstancedComponent =
+        Cast<UCesiumGltfInstancedComponent>(Hit.Component);
+    if (IsValid(pInstancedComponent)) {
+      const FCesiumInstanceFeatures& instanceFeatures =
+          UCesiumInstanceFeaturesBlueprintLibrary::GetInstanceFeatures(
+              pInstancedComponent);
+      return UCesiumInstanceFeaturesBlueprintLibrary::GetFeatureIDFromInstance(
+          instanceFeatures,
+          Hit.Item);
+    }
+  }
   // Find the first vertex of the face.
   const UCesiumGltfPrimitiveComponent* pGltfComponent =
       Cast<UCesiumGltfPrimitiveComponent>(Hit.Component);

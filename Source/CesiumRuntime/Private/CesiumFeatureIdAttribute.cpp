@@ -2,6 +2,7 @@
 
 #include "CesiumFeatureIdAttribute.h"
 #include <CesiumGltf/Accessor.h>
+#include <CesiumGltf/ExtensionExtMeshGpuInstancing.h>
 #include <CesiumGltf/Model.h>
 
 using namespace CesiumGltf;
@@ -37,6 +38,31 @@ FCesiumFeatureIdAttribute::FCesiumFeatureIdAttribute(
 
   this->_status = std::visit(
       [](auto view) {
+        if (view.status() != AccessorViewStatus::Valid) {
+          return ECesiumFeatureIdAttributeStatus::ErrorInvalidAccessor;
+        }
+
+        return ECesiumFeatureIdAttributeStatus::Valid;
+      },
+      this->_featureIdAccessor);
+}
+
+FCesiumFeatureIdAttribute::FCesiumFeatureIdAttribute(
+    const Model& Model,
+    const Node& Node,
+    const int64 FeatureIDAttribute,
+    const FString& PropertyTableName)
+    : _status(ECesiumFeatureIdAttributeStatus::ErrorInvalidAttribute),
+      _featureIdAccessor(),
+      _attributeIndex(FeatureIDAttribute),
+      _propertyTableName(PropertyTableName) {
+  this->_featureIdAccessor = CesiumGltf::getFeatureIdAccessorView(
+      Model,
+      Node,
+      static_cast<int32_t>(this->_attributeIndex));
+
+  this->_status = std::visit(
+      [](auto&& view) {
         if (view.status() != AccessorViewStatus::Valid) {
           return ECesiumFeatureIdAttributeStatus::ErrorInvalidAccessor;
         }
