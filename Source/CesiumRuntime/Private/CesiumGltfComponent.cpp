@@ -3170,6 +3170,23 @@ static void SetMetadataParameterValues_DEPRECATED(
 PRAGMA_ENABLE_DEPRECATION_WARNINGS
 #pragma endregion
 
+namespace {
+void addInstanceFeatureIds(UCesiumGltfInstancedComponent* pInstancedComponent) {
+  const FCesiumInstanceFeatures& instanceFeatures =
+      UCesiumInstanceFeaturesBlueprintLibrary::GetInstanceFeatures(
+          pInstancedComponent);
+  const TArray<FCesiumFeatureIdSet>& featureIdSets =
+      UCesiumInstanceFeaturesBlueprintLibrary::GetFeatureIDSets(instanceFeatures);
+  int32 featureSetCount = featureIdSets.Num();
+  if (featureSetCount == 0) {
+    return;
+  }
+  for (const auto& idSet : featureIdSets) {
+  }
+
+}
+} // namespace
+
 static void loadPrimitiveGameThreadPart(
     CesiumGltf::Model& model,
     UCesiumGltfComponent* pGltf,

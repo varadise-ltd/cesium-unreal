@@ -274,9 +274,15 @@ void AutoFillPropertyTextureDescriptions(
 void AutoFillFeatureIdSetDescriptions(
     TArray<FCesiumFeatureIdSetDescription>& Descriptions,
     const FCesiumPrimitiveFeatures& Features,
+    const FCesiumInstanceFeatures* InstanceFeatures,
     const TArray<FCesiumPropertyTable>& PropertyTables) {
-  const TArray<FCesiumFeatureIdSet> featureIDSets =
+  TArray<FCesiumFeatureIdSet> featureIDSets =
       UCesiumPrimitiveFeaturesBlueprintLibrary::GetFeatureIDSets(Features);
+  if (InstanceFeatures) {
+    featureIDSets.Append(
+        UCesiumInstanceFeaturesBlueprintLibrary::GetFeatureIDSets(
+            *InstanceFeatures));
+  }
   int32 featureIDTextureCounter = 0;
 
   for (const FCesiumFeatureIdSet& featureIDSet : featureIDSets) {
@@ -391,9 +397,16 @@ void UCesiumFeaturesMetadataComponent::AutoFill() {
       const TArray<FCesiumPropertyTable>& propertyTables =
           UCesiumModelMetadataBlueprintLibrary::GetPropertyTables(
               modelMetadata);
+      const FCesiumInstanceFeatures* pInstanceFeatures = nullptr;
+      const auto* pInstancedComponent =
+          Cast<UCesiumGltfInstancedComponent>(pChildComponent);
+      if (pInstancedComponent) {
+        pInstanceFeatures = pInstancedComponent->pInstanceFeatures.Get();
+      }
       AutoFillFeatureIdSetDescriptions(
           this->FeatureIdSets,
           primitiveFeatures,
+          pInstanceFeatures,
           propertyTables);
 
       const FCesiumPrimitiveMetadata& primitiveMetadata = primData.Metadata;
