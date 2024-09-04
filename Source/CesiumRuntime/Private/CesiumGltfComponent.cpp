@@ -77,7 +77,7 @@ using namespace LoadGltfResult;
 // - Press delete to try to delete it
 // Note that the console gives an error, but also tells you the url associated
 // with it
-#define DEBUG_GLTF_ASSET_NAMES 0
+#define DEBUG_GLTF_ASSET_NAMES 1
 
 namespace {
 using TMeshVector2 = FVector2f;
@@ -1285,8 +1285,6 @@ static void loadPrimitive(
       MakeUnique<FStaticMeshRenderData>();
   RenderData->AllocateLODResources(1);
 
-  FStaticMeshLODResources& LODResources = RenderData->LODResources[0];
-
   {
     TRACE_CPUPROFILER_EVENT_SCOPE(Cesium::ComputeAABB)
 
@@ -1352,6 +1350,11 @@ static void loadPrimitive(
     }
   }
 
+  FStaticMeshLODResources& LODResources = RenderData->LODResources[0];
+
+  FPositionVertexBuffer& positionBuffer =
+      LODResources.VertexBuffers.PositionVertexBuffer;
+
   // If we don't have normals, the gltf spec prescribes that the client
   // implementation must generate flat normals, which requires duplicating
   // vertices shared by multiple triangles. If we don't have tangents, but
@@ -1361,39 +1364,36 @@ static void loadPrimitive(
   duplicateVertices =
       duplicateVertices && primitive.mode != MeshPrimitive::Mode::POINTS;
 
-  TArray<FStaticMeshBuildVertex> StaticMeshBuildVertices;
-  StaticMeshBuildVertices.SetNum(
-      duplicateVertices ? indices.Num()
-                        : static_cast<int>(positionView.size()));
+  uint32 numberOfVertices =
+      duplicateVertices ? uint32(indices.Num()) : uint32(positionView.size());
+  positionBuffer.Init(numberOfVertices, false);
 
   {
     if (duplicateVertices) {
       TRACE_CPUPROFILER_EVENT_SCOPE(Cesium::CopyDuplicatedPositions)
-      for (int i = 0; i < indices.Num(); ++i) {
-        FStaticMeshBuildVertex& vertex = StaticMeshBuildVertices[i];
+      check(numberOfVertices == uint32(indices.Num()));
+      for (uint32 i = 0; i < uint32(indices.Num()); ++i) {
         uint32 vertexIndex = indices[i];
         const TMeshVector3& pos = positionView[vertexIndex];
-        vertex.Position.X = pos.X * CesiumPrimitiveData::positionScaleFactor;
-        vertex.Position.Y = -pos.Y * CesiumPrimitiveData::positionScaleFactor;
-        vertex.Position.Z = pos.Z * CesiumPrimitiveData::positionScaleFactor;
-        vertex.UVs[0] = TMeshVector2(0.0f, 0.0f);
-        vertex.UVs[2] = TMeshVector2(0.0f, 0.0f);
+        FVector3f& vertexPosition = positionBuffer.VertexPosition(i);
+        vertexPosition.X = pos.X * CesiumPrimitiveData::positionScaleFactor;
+        vertexPosition.Y = -pos.Y * CesiumPrimitiveData::positionScaleFactor;
+        vertexPosition.Z = pos.Z * CesiumPrimitiveData::positionScaleFactor;
         RenderData->Bounds.SphereRadius = FMath::Max(
-            (FVector(vertex.Position) - RenderData->Bounds.Origin).Size(),
+            (FVector(vertexPosition) - RenderData->Bounds.Origin).Size(),
             RenderData->Bounds.SphereRadius);
       }
     } else {
       TRACE_CPUPROFILER_EVENT_SCOPE(Cesium::CopyPositions)
-      for (int i = 0; i < StaticMeshBuildVertices.Num(); ++i) {
-        FStaticMeshBuildVertex& vertex = StaticMeshBuildVertices[i];
+      check(numberOfVertices == uint32(positionView.size()));
+      for (uint32 i = 0; i < uint32(positionView.size()); ++i) {
         const TMeshVector3& pos = positionView[i];
-        vertex.Position.X = pos.X * CesiumPrimitiveData::positionScaleFactor;
-        vertex.Position.Y = -pos.Y * CesiumPrimitiveData::positionScaleFactor;
-        vertex.Position.Z = pos.Z * CesiumPrimitiveData::positionScaleFactor;
-        vertex.UVs[0] = TMeshVector2(0.0f, 0.0f);
-        vertex.UVs[2] = TMeshVector2(0.0f, 0.0f);
+        FVector3f& vertexPosition = positionBuffer.VertexPosition(i);
+        vertexPosition.X = pos.X * CesiumPrimitiveData::positionScaleFactor;
+        vertexPosition.Y = -pos.Y * CesiumPrimitiveData::positionScaleFactor;
+        vertexPosition.Z = pos.Z * CesiumPrimitiveData::positionScaleFactor;
         RenderData->Bounds.SphereRadius = FMath::Max(
-            (FVector(vertex.Position) - RenderData->Bounds.Origin).Size(),
+            (FVector(vertexPosition) - RenderData->Bounds.Origin).Size(),
             RenderData->Bounds.SphereRadius);
       }
     }
@@ -1612,12 +1612,6 @@ static void loadPrimitive(
   {
     TRACE_CPUPROFILER_EVENT_SCOPE(Cesium::InitBuffers)
 
-    // Set to full precision (32-bit) UVs. This is especially important for
-    // metadata because integer feature IDs can and will lose meaningful
-    // precision when using 16-bit floats.
-    LODResources.VertexBuffers.StaticMeshVertexBuffer.SetUseFullPrecisionUVs(
-        true);
-
     LODResources.VertexBuffers.PositionVertexBuffer.Init(
         StaticMeshBuildVertices,
         false);
@@ -1628,11 +1622,45 @@ static void loadPrimitive(
       ColorVertexBuffer.Init(StaticMeshBuildVertices, false);
     }
 
+    // LODResources.VertexBuffers.StaticMeshVertexBuffer.Init(
+    //     0,
+    //     gltfToUnrealTexCoordMap.size() == 0 ? 1
+    //                                         : gltfToUnrealTexCoordMap.size(),
+    //     false);
+    //// TODO: for no discernible reason, AppendVertices resets the number of
+    //// texture coordinates to 1. So this won't work if we have more or less
+    /// than / that.
+    // LODResources.VertexBuffers.StaticMeshVertexBuffer.AppendVertices(
+    //     StaticMeshBuildVertices.GetData(),
+    //     StaticMeshBuildVertices.Num(),
+    //     false);
+
+    // LODResources.VertexBuffers.StaticMeshVertexBuffer.Init(
+    //     StaticMeshBuildVertices,
+    //     gltfToUnrealTexCoordMap.size() == 0 ? 1
+    //                                         : gltfToUnrealTexCoordMap.size(),
+    //     false);
+
     LODResources.VertexBuffers.StaticMeshVertexBuffer.Init(
-        StaticMeshBuildVertices,
-        gltfToUnrealTexCoordMap.size() == 0 ? 1
-                                            : gltfToUnrealTexCoordMap.size(),
+        StaticMeshBuildVertices.Num(),
+        numberOfTextureCoordinates,
         false);
+
+    // Copy the vertices into the buffer.
+    for (uint32 i = 0; i < uint32(StaticMeshBuildVertices.Num()); ++i) {
+      const FStaticMeshBuildVertex& SourceVertex = StaticMeshBuildVertices[i];
+
+      LODResources.VertexBuffers.StaticMeshVertexBuffer.SetVertexTangents(
+          i,
+          SourceVertex.TangentX,
+          SourceVertex.TangentY,
+          SourceVertex.TangentZ);
+      for (uint32 UVIndex = 0; UVIndex < numberOfTextureCoordinates;
+           UVIndex++) {
+        LODResources.VertexBuffers.StaticMeshVertexBuffer
+            .SetVertexUV(i, UVIndex, SourceVertex.UVs[UVIndex], false);
+      }
+    }
   }
 
   FStaticMeshSectionArray& Sections = LODResources.Sections;
