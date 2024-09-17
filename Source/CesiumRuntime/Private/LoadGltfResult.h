@@ -206,8 +206,9 @@ struct LoadMeshResult {
 
   LoadMeshResult(const LoadMeshResult&) = delete;
 
-  LoadMeshResult(LoadMeshResult&& other)
-      : primitiveResults(std::move(other.primitiveResults)) {}
+  LoadMeshResult(LoadMeshResult&& other) {
+    primitiveResults.swap(other.primitiveResults);
+  }
 
   LoadMeshResult& operator=(LoadMeshResult&& other) {
     primitiveResults.swap(other.primitiveResults);
@@ -226,8 +227,8 @@ struct LoadNodeResult {
   LoadNodeResult(const LoadNodeResult&) = delete;
 
   LoadNodeResult(LoadNodeResult&& other)
-      : InstanceTransforms(std::move(other.InstanceTransforms)),
-        pInstanceFeatures(std::move(other.pInstanceFeatures)) {
+      : pInstanceFeatures(std::move(other.pInstanceFeatures)) {
+    InstanceTransforms.swap(other.InstanceTransforms);
     meshResult.swap(other.meshResult);
   }
 

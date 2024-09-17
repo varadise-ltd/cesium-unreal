@@ -3178,12 +3178,22 @@ void addInstanceFeatureIds(UCesiumGltfInstancedComponent* pInstancedComponent) {
   const TArray<FCesiumFeatureIdSet>& featureIdSets =
       UCesiumInstanceFeaturesBlueprintLibrary::GetFeatureIDSets(instanceFeatures);
   int32 featureSetCount = featureIdSets.Num();
+  pInstancedComponent->NumCustomDataFloats = featureSetCount;
   if (featureSetCount == 0) {
     return;
   }
-  for (const auto& idSet : featureIdSets) {
+  int32 numInstances = pInstancedComponent->GetInstanceCount();
+  pInstancedComponent->PerInstanceSMCustomData.SetNum(featureSetCount * numInstances);
+  for (int32 j = 0; j < featureSetCount; ++j) {
+    for (int32 i = 0; i < numInstances; ++i) {
+      int64 featureId = UCesiumInstanceFeaturesBlueprintLibrary::GetFeatureIDFromInstance(
+          instanceFeatures,
+          i,
+          j);
+      pInstancedComponent->PerInstanceSMCustomData[i * featureSetCount + j] =
+          static_cast<float>(featureId);
+    }
   }
-
 }
 } // namespace
 
