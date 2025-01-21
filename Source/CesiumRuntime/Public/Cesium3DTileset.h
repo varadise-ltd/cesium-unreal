@@ -97,6 +97,10 @@ public:
   ACesium3DTileset();
   virtual ~ACesium3DTileset();
 
+protected:
+  virtual void OnDestroyTileset();
+  virtual void OnLoadTilesetCompleted();
+
 private:
   UPROPERTY(VisibleAnywhere, Category = "Cesium") USceneComponent* Root;
 
@@ -1162,7 +1166,7 @@ protected:
       FVector NormalImpulse,
       const FHitResult& Hit) override;
 
-private:
+protected:
   void LoadTileset();
   void DestroyTileset();
 

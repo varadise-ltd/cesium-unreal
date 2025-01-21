@@ -73,6 +73,16 @@ FCesium3DTilesetLoadFailure OnCesium3DTilesetLoadFailure{};
 // Avoid complaining about the deprecated metadata struct
 PRAGMA_DISABLE_DEPRECATION_WARNINGS
 
+void ACesium3DTileset::OnDestroyTileset()
+{
+
+}
+
+void ACesium3DTileset::OnLoadTilesetCompleted()
+{
+
+}
+
 // Sets default values
 ACesium3DTileset::ACesium3DTileset()
     : AActor(),
@@ -1069,6 +1079,7 @@ void ACesium3DTileset::UpdateLoadStatus() {
     // Tileset just finished loading, we broadcast the update
     UE_LOG(LogCesium, Verbose, TEXT("Broadcasting OnTileLoaded"));
     OnTilesetLoaded.Broadcast();
+    OnLoadTilesetCompleted();
   }
 }
 
@@ -1401,6 +1412,9 @@ void ACesium3DTileset::LoadTileset() {
 }
 
 void ACesium3DTileset::DestroyTileset() {
+  
+  OnDestroyTileset();
+
   if (this->_cesiumViewExtension) {
     this->_cesiumViewExtension = nullptr;
   }

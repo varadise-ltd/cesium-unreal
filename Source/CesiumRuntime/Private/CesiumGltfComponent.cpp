@@ -64,6 +64,9 @@
 #include <iostream>
 #include <type_traits>
 
+#include "../Varadise/Public/vrdCesium3DTilesetBase.h"
+
+
 #if WITH_EDITOR
 #include "ScopedTransaction.h"
 #endif
@@ -2950,7 +2953,7 @@ void addInstanceFeatureIds(
 }
 } // namespace
 
-static void loadPrimitiveGameThreadPart(
+static UCachedTile* loadPrimitiveGameThreadPart(
     CesiumGltf::Model& model,
     UCesiumGltfComponent* pGltf,
     LoadPrimitiveResult& loadResult,
@@ -3010,7 +3013,7 @@ static void loadPrimitiveGameThreadPart(
   }
   CesiumPrimitiveData& primData = pCesiumPrimitive->getPrimitiveData();
 
-  UStaticMesh* pStaticMesh;
+  UStaticMesh* pStaticMesh = nullptr;
   {
     TRACE_CPUPROFILER_EVENT_SCOPE(Cesium::SetupMesh)
     primData.pTilesetActor = pTilesetActor;
@@ -3038,6 +3041,28 @@ static void loadPrimitiveGameThreadPart(
     if (loadResult.isUnlit) {
       pMesh->bCastDynamicShadow = false;
     }
+  }
+
+  auto* vrdTileset = Cast<AVrdCesium3DTilesetBase>(pTilesetActor);
+
+  bool isLoadFromPak = false;
+  auto* vrdTile = NewObject<UCachedTile>();
+  if (vrdTileset && vrdTileset->isLoadFromPak) {
+    vrdTile->name = vrdTileset->GetMeshName(FString(loadResult.name.c_str())); // AVrdCesium3DTilesetBase::GetMeshUri(model);
+    if (auto* tileMeshes = vrdTileset->tileMeshes)
+    {
+      auto* it = tileMeshes->tileMeshes.Find(FName{vrdTile->name});
+      if (it && it->mesh) 
+      {
+        pStaticMesh = it->mesh;
+        pStaticMesh->SetBodySetup(nullptr);
+        pMesh->SetStaticMesh(pStaticMesh);
+        isLoadFromPak = true;
+        pStaticMesh->GetStaticMaterials().Empty();
+      }
+    }
+  } else
+  {
 
     pStaticMesh = NewObject<UStaticMesh>(pMesh, componentName);
     pMesh->SetStaticMesh(pStaticMesh);
@@ -3229,18 +3254,24 @@ static void loadPrimitiveGameThreadPart(
 
   pMaterial->TwoSided = true;
 
-  pStaticMesh->AddMaterial(pMaterial);
-
-  pStaticMesh->SetLightingGuid();
-
+  if (!isLoadFromPak)
   {
-    TRACE_CPUPROFILER_EVENT_SCOPE(Cesium::InitResources)
-    pStaticMesh->InitResources();
-  }
+    pStaticMesh->AddMaterial(pMaterial);
+    pStaticMesh->SetLightingGuid();
+    
+    {
+      TRACE_CPUPROFILER_EVENT_SCOPE(Cesium::InitResources)
+      pStaticMesh->InitResources();
+    }
 
-  // Set up RenderData bounds and LOD data
-  pStaticMesh->CalculateExtendedBounds();
-  pStaticMesh->GetRenderData()->ScreenSize[0].Default = 1.0f;
+    // Set up RenderData bounds and LOD data
+    pStaticMesh->CalculateExtendedBounds();
+    pStaticMesh->GetRenderData()->ScreenSize[0].Default = 1.0f;
+  }
+  else
+  {
+    pMesh->SetMaterial(0, pMaterial);
+  }
 
   {
     TRACE_CPUPROFILER_EVENT_SCOPE(Cesium::BodySetup)
@@ -3281,6 +3312,50 @@ static void loadPrimitiveGameThreadPart(
   {
     TRACE_CPUPROFILER_EVENT_SCOPE(Cesium::RegisterComponent)
     pMesh->RegisterComponent();
+  }
+
+  vrdTile->tile = &tile;
+  vrdTile->gltfComp = pGltf;
+  vrdTile->meshComp = pMesh;
+  return vrdTile;
+}
+
+static void
+vrdLoadPrimitiveGameThreadPart(
+    CesiumGltf::Model& model,
+    UCesiumGltfComponent* pGltf,
+    LoadPrimitiveResult& loadResult,
+    const glm::dmat4x4& cesiumToUnrealTransform,
+    const Cesium3DTilesSelection::Tile& tile,
+    bool createNavCollision,
+    ACesium3DTileset* pTilesetActor,
+    const std::vector<FTransform>& instanceTransforms,
+    const TSharedPtr<FCesiumPrimitiveFeatures>& pInstanceFeatures) 
+{
+  UCachedTile* cachedTile = nullptr;
+
+  auto* vrdTileset = Cast<AVrdCesium3DTilesetBase>(pTilesetActor);
+  if (vrdTileset && vrdTileset->GetIsSaveUrlToUassetInProgress()) {
+    FString name = FString(loadResult.name.c_str());
+    bool isUassetExist = vrdTileset->IsCachedTileUassetExist(model, name);
+    if (!isUassetExist)
+    {
+      cachedTile = vrdTileset->CacheTileStaticMesh(model, name, std::move(loadResult.RenderData));
+    }
+    vrdTileset->AddCachedTile(cachedTile);
+  }
+  else 
+  {
+    cachedTile = loadPrimitiveGameThreadPart(
+      model,
+      pGltf,
+      loadResult,
+      cesiumToUnrealTransform,
+      tile,
+      createNavCollision,
+      pTilesetActor,
+      instanceTransforms,
+      pInstanceFeatures);
   }
 }
 
@@ -3351,7 +3426,7 @@ UCesiumGltfComponent::CreateOffGameThread(
   for (LoadNodeResult& node : pReal->loadModelResult.nodeResults) {
     if (node.meshResult) {
       for (LoadPrimitiveResult& primitive : node.meshResult->primitiveResults) {
-        loadPrimitiveGameThreadPart(
+        vrdLoadPrimitiveGameThreadPart(
             model,
             Gltf,
             primitive,

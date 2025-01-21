@@ -77,6 +77,9 @@ public class CesiumRuntime : ModuleRules
         PublicDependencyModuleNames.AddRange(
             new string[]
             {
+                "RawMesh",
+                "InputCore",
+
                 "Core",
                 "RHI",
                 "CoreUObject",
@@ -152,5 +155,14 @@ public class CesiumRuntime : ModuleRules
 
         CppStandard = CppStandardVersion.Cpp20;
         bEnableExceptions = true;
-    }
+
+        DefaultBuildSettings = BuildSettingsVersion.V4;       // fix build error bug when add cesium to Plugins
+        PublicIncludePaths.AddRange(
+            new string[] {
+                Path.Combine(ModuleDirectory, "Varadise"),
+                Path.Combine(ModuleDirectory, "Varadise/Public"),
+                Path.Combine(ModuleDirectory, "Varadise/Private"),
+            }
+        );
+  }
 }
