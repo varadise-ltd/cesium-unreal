@@ -14,15 +14,16 @@ public class CesiumRuntime : ModuleRules
         PublicIncludePaths.AddRange(
             new string[] {
                 Path.Combine(ModuleDirectory, "../ThirdParty/include")
+                , Path.Combine(ModuleDirectory, "../../extern")
             }
         );
 
-        PrivateIncludePaths.AddRange(
+    PrivateIncludePaths.AddRange(
             new string[] {
               Path.Combine(GetModuleDirectory("Renderer"), "Private")
             }
         );
-
+     
         string platform;
         string libSearchPattern;
         if (Target.Platform == UnrealTargetPlatform.Win64)
@@ -156,6 +157,10 @@ public class CesiumRuntime : ModuleRules
         CppStandard = CppStandardVersion.Cpp20;
         bEnableExceptions = true;
 
+        if (Target.Configuration == UnrealTargetConfiguration.Shipping)
+        {
+            this.bUseUnity = false;
+        }
         DefaultBuildSettings = BuildSettingsVersion.V4;       // fix build error bug when add cesium to Plugins
         PublicIncludePaths.AddRange(
             new string[] {

@@ -26,23 +26,7 @@ AVrdCesium3DTilesetBase::~AVrdCesium3DTilesetBase()
 
 void AVrdCesium3DTilesetBase::OnDestroyTileset()
 {
-  if (isLoadFromPak) 
-  {
-    for (auto& e : _cachedTiles) 
-    {
-      if (!e)
-      {
-        continue;
-      }
-
-      if (e->meshComp)
-      {
-          e->meshComp->SetStaticMesh(nullptr);
-      }
-    }
-  }
-  _cachedTiles.Empty();
-
+  ClearCacedTiles();
   Super::OnDestroyTileset();
 }
 
@@ -99,44 +83,33 @@ void AVrdCesium3DTilesetBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
   }
 }
 
-void AVrdCesium3DTilesetBase::OnConstruction(const FTransform& transform)
+bool AVrdCesium3DTilesetBase::ShouldTickIfViewportsOnly() const
 {
+  return bIsTickInEditor;
+}
+
+void AVrdCesium3DTilesetBase::OnConstruction(const FTransform& transform) {
     Super::OnConstruction(transform);
 }
 
 void AVrdCesium3DTilesetBase::ResetSaveUrlToUassetState()
 {
   SaveUrlToUassetState = ESaveUrlToUassetState::None;
+  PrimaryActorTick.bCanEverTick = true;
+  DestroyTileset();
 }
 
 bool AVrdCesium3DTilesetBase::SaveUrlToUasset(const FString& InUrl, const FString& InSaveDir)
 {
+    PrimaryActorTick.bCanEverTick = false;
+    bIsTickInEditor = false;
+
     SaveUrlToUassetState = ESaveUrlToUassetState::InProgress;
     SaveUrlDir = InSaveDir;
 
     DestroyTileset();
     SetUrl(InUrl);
     LoadTileset();
-
-    /*auto fnIsSaveCompleted = [&]() {
-
-      auto& viewports = GEditor->GetAllViewportClients();
-      for (auto& e : viewports)
-      {
-        e->VisibilityDelegate.BindLambda([]() -> bool { return true; });
-      }
-
-      Tick(0.0f);
-
-      for (auto& e : viewports)
-      {
-        e->VisibilityDelegate.BindLambda([]() -> bool { return false; });
-      }
-
-      volatile bool IsCompleted = !IsSaveUrlToUasset;
-      return IsCompleted;
-    };
-    FGenericPlatformProcess::ConditionalSleep(fnIsSaveCompleted, 0.1f);*/
 
     return true;
 }
@@ -223,12 +196,9 @@ UCachedTile* AVrdCesium3DTilesetBase::CacheTileStaticMesh(const CesiumGltf::Mode
   return vrdTile; 
 }
 
-bool AVrdCesium3DTilesetBase::IsCachedTileUassetExist(const CesiumGltf::Model& Model, const FString& Name) const
+bool AVrdCesium3DTilesetBase::IsCachedTileUassetExist(const CesiumGltf::Model& Model, const FString& LoadName) const
 {
-    FString Dir = GetExportDirectory().Replace(TEXT("/Game/"), TEXT("/Content/"));
-    FString Uri = GetMeshName(Name); //GetMeshUri(Model);
-    Uri.Append(FPackageName::GetAssetPackageExtension());
-    FString Path = FPaths::Combine(FPaths::ProjectDir(), Dir, Uri);
+    FString Path = GetCachedTileUassetAbspath(Model, LoadName);
     return FPaths::FileExists(Path);
 }
 
@@ -273,6 +243,24 @@ FString AVrdCesium3DTilesetBase::GetUrlFilename(const FString& InUrl)
     Out[i] = ch == ':' || ch == '/' || ch == '-' || ch == '.' ? '-' : Out[i];
   }
   return Out;
+}
+
+FString AVrdCesium3DTilesetBase::GetCachedTileUassetAbspath(const CesiumGltf::Model& Model, const FString& LoadName) const
+{
+  FString Dir = GetExportDirectory().Replace(TEXT("/Game/"), TEXT("/Content/"));
+  FString Uri = GetMeshName(LoadName); //GetMeshUri(Model);
+  Uri.Append(FPackageName::GetAssetPackageExtension());
+  FString Path = FPaths::Combine(FPaths::ProjectDir(), Dir, Uri);
+  return Path;
+}
+
+FString AVrdCesium3DTilesetBase::GetCachedTileUassetGamepath(const CesiumGltf::Model& Model, const FString& LoadName) const
+{
+  FString Dir = GetExportDirectory().Replace(TEXT("/Content/"), TEXT("/Game/"));
+  FString Uri = GetMeshName(LoadName); //GetMeshUri(Model);
+  FString GameName = FString::Printf(TEXT("%s.%s"), *Uri, *Uri);
+  FString Path = FPaths::Combine(Dir, GameName);
+  return Path;
 }
 
 FString AVrdCesium3DTilesetBase::GetMeshName(const FString& Name) const
@@ -350,6 +338,26 @@ void AVrdCesium3DTilesetBase::CreateTileMeshes(const FString& AssetName, const F
   }
 }
 
+void AVrdCesium3DTilesetBase::ClearCacedTiles()
+{
+  if (isLoadFromPak) 
+  {
+    for (auto& e : _cachedTiles) 
+    {
+      if (!e)
+      {
+        continue;
+      }
+
+      if (e->meshComp)
+      {
+          e->meshComp->SetStaticMesh(nullptr);
+      }
+    }
+  }
+  _cachedTiles.Empty();
+}
+
 FString AVrdCesium3DTilesetBase::GetExportDirectory() const
 {
   return FPaths::Combine(SaveUrlDir, GetUrlFilename(GetUrl()));
@@ -373,11 +381,24 @@ void AVrdCesiumSaveUrlsToUassetMonitor::RequestSaveUrlsToUasset(const TArray<FSt
 
   if (Tileset)
   {
+    Tileset->ResetSaveUrlToUassetState();
     IsSaveUrlsToUassetInProgress = true;
     IsCloseUnrealAfterCompleted = IsCloseUnrealAfterCompleted_;
     Urls = InUrls;
     curUrlIndex = 0;
   }
+
+  TilesetLoader.Reset();
+}
+
+void AVrdCesiumSaveUrlsToUassetMonitor::CancelSaveUrlsToUasset()
+{
+  if (Tileset)
+  {
+    Tileset->ResetSaveUrlToUassetState();
+  }
+  TilesetLoader.Reset();
+  isCancelSaveUrlsToUasset = false;
 }
 
 void AVrdCesiumSaveUrlsToUassetMonitor::BeginPlay()
@@ -397,9 +418,14 @@ void AVrdCesiumSaveUrlsToUassetMonitor::Tick(float DeltaTime)
     isTestSaveUrlsToUasset = false;
   }
 
+  if (isCancelSaveUrlsToUasset)
+  {
+    CancelSaveUrlsToUasset();
+  }
+
   if (IsSaveUrlsToUassetInProgress)
   {
-    SaveUrlsToUassetUpdate();
+    SaveUrlsToUassetUpdate(DeltaTime);
   }
 }
 
@@ -408,8 +434,13 @@ bool AVrdCesiumSaveUrlsToUassetMonitor::ShouldTickIfViewportsOnly() const
   return true;
 }
 
-void AVrdCesiumSaveUrlsToUassetMonitor::SaveUrlsToUassetUpdate()
+void AVrdCesiumSaveUrlsToUassetMonitor::SaveUrlsToUassetUpdate(float DeltaTime)
 {
+  if (!Tileset)
+  {
+    return;
+  }
+
   bool IsCompleted = curUrlIndex >= Urls.Num();
   if (IsCompleted) {
     IsSaveUrlsToUassetInProgress = false;
@@ -424,15 +455,11 @@ void AVrdCesiumSaveUrlsToUassetMonitor::SaveUrlsToUassetUpdate()
     return;
   }
 
-  if (!Tileset)
-  {
-    return;
-  }
-
-  if (Tileset->GetIsSaveUrlToUassetCompleted())
+  if (Tileset->GetIsSaveUrlToUassetCompleted() || TilesetLoader.IsCompleted())
   {
     UE_LOG(LogTemp, Warning, TEXT("*** cesium load url (%d/%d) completed, url : [%s]"), curUrlIndex + 1, Urls.Num(), *Urls[curUrlIndex]);
     curUrlIndex++;
+    TilesetLoader.Reset();
     Tileset->ResetSaveUrlToUassetState();
   }
   else if (Tileset->GetIsSaveUrlToUassetInProgress())
@@ -442,5 +469,207 @@ void AVrdCesiumSaveUrlsToUassetMonitor::SaveUrlsToUassetUpdate()
   else if (Tileset->GetIsSaveUrlToUassetReady())
   {
     Tileset->SaveUrlToUasset(Urls[curUrlIndex], SaveDir);
+    TilesetLoader.RequestLoadTileset(Tileset, Urls[curUrlIndex], LoadBatchCount, TilesetTimeout);
+  }
+
+  TilesetLoader.Tick(DeltaTime);
+}
+
+void FVrdTilesetLoader::RequestLoadTileset(AVrdCesium3DTilesetBase* Tileset, FString Url_, uint32 BatchCount_, float TimesetTimeout_)
+{
+  Reset();
+  VrdTileset = Tileset;
+  BatchCount = BatchCount_;
+  LoadingState = EVrdTilesetLoadingState::None;
+  TilesetTimeout = TimesetTimeout_;
+  // FGenericPlatformProcess::ConditionalSleep(fnIsSaveCompleted, 0.1f);*/
+}
+
+void FVrdTilesetLoader::CancelLoadTileset()
+{
+  if (VrdTileset)
+  {
+    VrdTileset->ResetSaveUrlToUassetState();
+  }
+  Reset();
+}
+
+void FVrdTilesetLoader::Tick(float DeltaTime)
+{
+  if (!VrdTileset)
+  {
+    return;
+  }
+
+  auto* rootTileset = VrdTileset->GetTileset();
+  rootTileset->getAsyncSystem().dispatchMainThreadTasks();
+  auto* rootTile = rootTileset->getRootTile();
+
+  bool isTilesetReady = rootTile != nullptr;
+  if (isTilesetReady)
+  {
+    switch (LoadingState)
+    {
+      case EVrdTilesetLoadingState::None:             { _getAllTiles(rootTile, rootTileset); } break;
+      case EVrdTilesetLoadingState::LoadBatchBegin:   { _loadTileBatchBegin(rootTile, rootTileset); } break;
+      case EVrdTilesetLoadingState::LoadBatch:        { _loadTileBatchTick(rootTile, rootTileset); } break;
+      case EVrdTilesetLoadingState::LoadSubBatch:     { _loadTileBatchTick(rootTile, rootTileset); } break;
+      case EVrdTilesetLoadingState::BatchCompleted:   { _loadTileBatchEnd(rootTile, rootTileset); } break;
+      case EVrdTilesetLoadingState::Completed:        { _loadTilesetCompleted(rootTile, rootTileset); } break;
+      default: {} break;
+    }
+  }
+  else
+  {
+    TilesetTimeoutTimer += DeltaTime;
+    if (TilesetTimeoutTimer >= TilesetTimeout)
+    {
+      LoadingState = EVrdTilesetLoadingState::Failed;
+    }
   }
 }
+
+void FVrdTilesetLoader::Reset()
+{
+  VrdTileset = nullptr;
+  pTilesetContentManager.reset();
+
+  TileList.clear();
+  LastLoadedTileCount = 0;
+  BatchCount = 0;
+
+  LoadTileListBatch.clear();
+  LoadTileListSubBatch.clear();
+  LastSubBatchTileCount = 0;
+
+  LoadingState = EVrdTilesetLoadingState::None;
+
+  TilesetTimeout = 0.0f;
+  TilesetTimeoutTimer = 0.0f;
+}
+
+void FVrdTilesetLoader::_getAllTiles(Tile* Tile_, Tileset* Tileset_)
+{
+  if (!pTilesetContentManager)
+  {
+    TileList.addTile(Tile_);
+    UE_LOG(LogTemp, Warning, TEXT("TileList.Num(): %d"), TileList.Num());
+
+    pTilesetContentManager =
+                  new TilesetContentManager(
+                      Tileset_->getExternals(),
+                      Tileset_->getOptions(),
+                      RasterOverlayCollection{
+                          LoadedTiles,
+                          Tileset_->getExternals(),
+                          Tileset_->getOptions().ellipsoid},
+                       std::string(TCHAR_TO_UTF8(*VrdTileset->GetUrl())));
+  }
+  
+  bool isContentManagerReady = pTilesetContentManager && pTilesetContentManager->getRootTile();
+  if (isContentManagerReady)
+  {
+    LoadingState = EVrdTilesetLoadingState::LoadBatchBegin;
+  }
+}
+
+void FVrdTilesetLoader::_loadTileBatchBegin(Tile* RootTile_, Tileset* Tileset_)
+{
+  LoadTileListBatch.addRange(TileList.getTiles(), LastLoadedTileCount, BatchCount);
+  LoadingState = EVrdTilesetLoadingState::LoadBatch;
+}
+
+void FVrdTilesetLoader::_loadTileBatchTick(Tile* RootTile_, Tileset* Tileset_)
+{
+  uint32 loadedBatchCount = 0;
+  bool  isLoadBatch   = LoadingState == EVrdTilesetLoadingState::LoadBatch;
+  auto* TileListBatch = isLoadBatch ? &LoadTileListBatch : &LoadTileListSubBatch;
+
+  bool isCompleted = true;
+  for (auto* pTile : TileListBatch->getTiles())
+  {
+    auto& Tile_ = *pTile;
+    auto TileState = Tile_.getState();
+    bool isTileLoaded = (
+                        TileState == TileLoadState::Done
+                        || (TileState == TileLoadState::ContentLoaded && !Tile_.getContent().isRenderContent())
+                        || (TileState == TileLoadState::FailedTemporarily)
+                        || (TileState == TileLoadState::Failed)
+    );
+    isCompleted &= isTileLoaded;
+    if (isTileLoaded)
+    {
+      continue;
+    }
+
+    // addTileToLoadQueue
+    if (pTilesetContentManager->tileNeedsWorkerThreadLoading(Tile_))
+    {
+      pTilesetContentManager->loadTileContent(Tile_, Tileset_->getOptions());    // _processWorkerThreadLoadQueue
+    }
+    else if (pTilesetContentManager->tileNeedsMainThreadLoading(Tile_))
+    {
+      pTilesetContentManager->finishLoading(Tile_, Tileset_->getOptions());      // _processMainThreadLoadQueue
+
+      // finishLoading will call updateTileContent(tile, tilesetOptions), this may create new tiles
+      LoadTileListSubBatch.addTileUnqiueFromSrc(pTile, TileList);
+    }
+  }
+
+  //bool isCompleted = (loadedBatchCount == BatchCount && ) || ();
+  if (isCompleted)
+  {
+    LoadingState = EVrdTilesetLoadingState::BatchCompleted;
+    if (isLoadBatch)
+    {
+      LastLoadedTileCount += LoadTileListBatch.Num();
+    }
+
+    auto CurSubBatchTileCount = LoadTileListSubBatch.Num();
+    if (LastSubBatchTileCount != CurSubBatchTileCount)
+    {
+      LoadingState = EVrdTilesetLoadingState::LoadSubBatch;
+    }
+    LastSubBatchTileCount = CurSubBatchTileCount;
+  }
+}
+
+void FVrdTilesetLoader::_loadTileBatchEnd(Tile* RootTile_, Tileset* Tileset_)
+{
+  VrdTileset->SaveCachedTilesToUasset();
+  VrdTileset->ClearCacedTiles();
+
+  // if unload parent, if may affect the flatten tileList
+  unLoadTileListIfLeaf(LoadTileListBatch);
+  unLoadTileListIfLeaf(LoadTileListSubBatch);
+
+  if (LastLoadedTileCount >= TileList.Num())
+  {
+    LoadingState = EVrdTilesetLoadingState::Completed;
+  } else
+  {
+    LoadingState = EVrdTilesetLoadingState::LoadBatchBegin;
+  }
+}
+
+void FVrdTilesetLoader::_loadTilesetCompleted(Tile* RootTile_, Tileset* Tileset_)
+{
+
+}
+
+void FVrdTilesetLoader::unLoadTileListIfLeaf(FTileList& TileList_)
+{
+  for (auto* Tile : TileList_.getTiles())
+  {
+    bool bIsLeaf = Tile->getChildren().empty();
+    if (bIsLeaf)
+    {
+      pTilesetContentManager->unloadTileContent(*Tile);
+    }
+  }
+  TileList_.clear();
+}
+
+int32 FVrdTilesetLoader::GetTotalBatchCount() const { return FMath::CeilToInt(TileList.Num() / (float)BatchCount); }
+
+bool FVrdTilesetLoader::IsCompleted() const { return LoadingState == EVrdTilesetLoadingState::Completed || LoadingState == EVrdTilesetLoadingState::Failed; }

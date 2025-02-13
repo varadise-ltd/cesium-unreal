@@ -64,8 +64,9 @@
 #include <iostream>
 #include <type_traits>
 
+#include "Engine/AssetManager.h"
 #include "../Varadise/Public/vrdCesium3DTilesetBase.h"
-
+#include "MaterialDomain.h"
 
 #if WITH_EDITOR
 #include "ScopedTransaction.h"
@@ -3048,22 +3049,32 @@ static UCachedTile* loadPrimitiveGameThreadPart(
   bool isLoadFromPak = false;
   auto* vrdTile = NewObject<UCachedTile>();
   if (vrdTileset && vrdTileset->isLoadFromPak) {
-    vrdTile->name = vrdTileset->GetMeshName(FString(loadResult.name.c_str())); // AVrdCesium3DTilesetBase::GetMeshUri(model);
-    if (auto* tileMeshes = vrdTileset->tileMeshes)
+    FString loadName = FString(loadResult.name.c_str());
+    vrdTile->name = vrdTileset->GetMeshName(loadName); // AVrdCesium3DTilesetBase::GetMeshUri(model);
+    //if (auto* tileMeshes = vrdTileset->tileMeshes)
     {
-      auto* it = tileMeshes->tileMeshes.Find(FName{vrdTile->name});
-      if (it && it->mesh) 
+      UObject*      asset = UAssetManager::GetStreamableManager().LoadSynchronous(vrdTileset->GetCachedTileUassetGamepath(model, loadName));
+      UStaticMesh*  mesh  = Cast<UStaticMesh>(asset);
+      //auto* it = tileMeshes->tileMeshes.Find(FName{vrdTile->name});
+      if (mesh) 
       {
-        pStaticMesh = it->mesh;
+        pStaticMesh = mesh;
         pStaticMesh->SetBodySetup(nullptr);
+
+        // prevent StaticMesh material slot zero, if yes, MeshComponent cannot override the material...
+        //pStaticMesh->GetStaticMaterials().Empty();
+        if (pStaticMesh->GetStaticMaterials().IsEmpty())
+        {
+          pStaticMesh->AddMaterial(UMaterial::GetDefaultMaterial(EMaterialDomain::MD_Surface));
+        }
         pMesh->SetStaticMesh(pStaticMesh);
         isLoadFromPak = true;
-        pStaticMesh->GetStaticMaterials().Empty();
       }
     }
-  } else
-  {
+  }
 
+  if (!isLoadFromPak)
+  {
     pStaticMesh = NewObject<UStaticMesh>(pMesh, componentName);
     pMesh->SetStaticMesh(pStaticMesh);
 
@@ -3333,6 +3344,15 @@ vrdLoadPrimitiveGameThreadPart(
     const TSharedPtr<FCesiumPrimitiveFeatures>& pInstanceFeatures) 
 {
   UCachedTile* cachedTile = nullptr;
+  /*if (true) {
+    auto* vrdTileset = Cast<AVrdCesium3DTilesetBase>(pTilesetActor);
+
+    FString name = FString(loadResult.name.c_str());
+    auto* vrdTile = NewObject<UCachedTile>();
+    vrdTile->name = vrdTileset->GetMeshName(name);
+    vrdTileset->AddCachedTile(vrdTile);
+    return;
+  }*/
 
   auto* vrdTileset = Cast<AVrdCesium3DTilesetBase>(pTilesetActor);
   if (vrdTileset && vrdTileset->GetIsSaveUrlToUassetInProgress()) {
@@ -3342,7 +3362,6 @@ vrdLoadPrimitiveGameThreadPart(
     {
       cachedTile = vrdTileset->CacheTileStaticMesh(model, name, std::move(loadResult.RenderData));
     }
-    vrdTileset->AddCachedTile(cachedTile);
   }
   else 
   {
@@ -3356,6 +3375,10 @@ vrdLoadPrimitiveGameThreadPart(
       pTilesetActor,
       instanceTransforms,
       pInstanceFeatures);
+  }
+
+  if (vrdTileset) {
+    vrdTileset->AddCachedTile(cachedTile);
   }
 }
 
