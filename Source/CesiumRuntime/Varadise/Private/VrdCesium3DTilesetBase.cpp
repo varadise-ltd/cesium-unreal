@@ -1,6 +1,7 @@
 #include "VrdCesium3DTilesetBase.h"
 
 #include "Components/StaticMeshComponent.h"
+#include "MaterialDomain.h"
 
 #include "CesiumRuntime/Private/CesiumGltfComponent.h"
 #include "CesiumRuntime/Private/VecMath.h"
@@ -24,9 +25,143 @@ AVrdCesium3DTilesetBase::~AVrdCesium3DTilesetBase()
 	
 }
 
+void AVrdCesium3DTilesetBase::testNanite()
+{
+  if (isClearTestNanite) {
+    testNaniteActors.Empty();
+    isClearTestNanite = false;
+  }
+
+  if (!isTestNanite) {
+    return;
+  }
+
+  auto* world = GetWorld();
+  if (!world) {
+    return;
+  }
+
+  testNaniteActors.Reserve(testNaniteCount);
+  for (size_t i = 0; i < testNaniteCount; i++) {
+    auto* actor = world->SpawnActor<AActor>();
+
+    //auto* meshComp = actor->CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
+    UStaticMeshComponent* meshComp = nullptr;
+    {
+      auto* newComponent = NewObject<UStaticMeshComponent>(actor);
+      newComponent->RegisterComponent();
+      newComponent->AttachToComponent(actor->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
+      actor->AddInstanceComponent(newComponent);
+      meshComp = newComponent;
+    }
+
+    meshComp->SetStaticMesh(testNaniteMesh);
+    if (testNaniteMesh->GetStaticMaterials().IsEmpty()) {
+      testNaniteMesh->AddMaterial(UMaterial::GetDefaultMaterial(EMaterialDomain::MD_Surface));
+    }
+    UMaterialInstanceDynamic* DynamicMaterial = UMaterialInstanceDynamic::Create(testNaniteMaterial, actor);
+    meshComp->SetMaterial(0, DynamicMaterial);
+
+    testNaniteActors.Add(actor);
+  }
+
+  isTestNanite = false;
+}
+
+void AVrdCesium3DTilesetBase::SetupStaticMesh(
+    bool bIsInit,
+    bool createNavCollision,
+    UStaticMesh* pStaticMesh,
+    UStaticMeshComponent* pMesh,
+  UMaterialInstanceDynamic* pMaterial,
+  UCesiumGltfComponent* pGltf,
+  TSharedPtr<Chaos::FTriangleMeshImplicitObject, ESPMode::ThreadSafe>& pCollisionMesh)
+{
+  if (!pStaticMesh)
+  {
+    return;
+  }
+
+  if (bIsInit)
+  {
+    pStaticMesh->SetBodySetup(nullptr);
+    // prevent StaticMesh material slot zero, if yes, MeshComponent cannot
+    // override the material...
+    // pStaticMesh->GetStaticMaterials().Empty();
+    if (pStaticMesh->GetStaticMaterials().IsEmpty())
+    {
+      pStaticMesh->AddMaterial(UMaterial::GetDefaultMaterial(EMaterialDomain::MD_Surface));
+    }
+
+    pStaticMesh->CreateBodySetup();
+
+    if (createNavCollision)
+    {
+      pStaticMesh->CreateNavCollision(true);
+    }
+  }
+
+  pMesh->SetStaticMesh(pStaticMesh);
+          
+  pMaterial->TwoSided = true;
+  pMesh->SetMaterial(0, pMaterial);
+
+  {
+    TRACE_CPUPROFILER_EVENT_SCOPE(Cesium::BodySetup)
+
+    UBodySetup* pBodySetup = pMesh->GetBodySetup();
+
+    // pMesh->UpdateCollisionFromStaticMesh();
+    pBodySetup->CollisionTraceFlag =
+        ECollisionTraceFlag::CTF_UseComplexAsSimple;
+
+    if (pCollisionMesh) {
+      #if ENGINE_VERSION_5_4_OR_HIGHER
+      pBodySetup->TriMeshGeometries.Add(pCollisionMesh);
+      #else
+      pBodySetup->ChaosTriMeshes.Add(pCollisionMesh);
+      #endif
+    }
+    // TSharedPtr<Chaos::FTriangleMeshImplicitObject, ESPMode::ThreadSafe>
+    
+    // Mark physics meshes created, no matter if we actually have a collision
+    // mesh or not. We don't want the editor creating collision meshes itself in
+    // the game thread, because that would be slow.
+    pBodySetup->bCreatedPhysicsMeshes = true;
+    pBodySetup->bSupportUVsAndFaceRemap =
+        UPhysicsSettings::Get()->bSupportUVFromHitResults;
+  }
+
+  pMesh->SetMobility(pGltf->Mobility);
+
+  // TODO: uncomment
+  //pMesh->SetupAttachment(pGltf);
+
+  {
+    TRACE_CPUPROFILER_EVENT_SCOPE(Cesium::RegisterComponent)
+    pMesh->RegisterComponent();
+  }
+}
+
 void AVrdCesium3DTilesetBase::OnDestroyTileset()
 {
   ClearCacedTiles();
+  CachedMeshLoader.Reset();
+  TilesetLoader.Reset();
+
+  /*if (isLoadFromPak)
+  {
+    auto& components = GetComponents();
+    for (auto* component : components)
+    {
+      auto* meshComponent = Cast<UStaticMeshComponent>(component);
+      if (meshComponent)
+      {
+        meshComponent->SetStaticMesh(nullptr);
+      }
+    }
+  }*/
+
   Super::OnDestroyTileset();
 }
 
@@ -43,17 +178,28 @@ void AVrdCesium3DTilesetBase::BeginPlay()
 {
 	Super::BeginPlay();
 
-  SaveUrlToUassetState          = ESaveUrlToUassetState::None; 
+  SaveUrlToUassetState          = ESaveUrlToUassetState::None;
+
+  TilesetLoader.RequestLoadTileset(this, GetUrl(), LoadBatchCount, TilesetTimeout, EVrdTilesetLoaderMode::Render);
 }
 
 void AVrdCesium3DTilesetBase::Tick(float DeltaTime)
 {
-  Super::Tick(DeltaTime);
-  
-  if (!FMath::IsNearlyEqual(this->GetLoadProgress(), 100.0)) 
+  if (!bForceRenderAllTile)
   {
-    UE_LOG(LogTemp, Warning, TEXT("getNumberOfTilesLoaded: %d"), this->GetTileset()->getNumberOfTilesLoaded());
+    Super::Tick(DeltaTime);
+    
+    if (!FMath::IsNearlyEqual(this->GetLoadProgress(), 100.0) && this->GetTileset()) 
+    {
+      UE_LOG(LogTemp, Warning, TEXT("this->GetLoadProgress(): %f, getNumberOfTilesLoaded: %d"), this->GetLoadProgress(), this->GetTileset()->getNumberOfTilesLoaded());
+    }
   }
+  else
+  {
+    TilesetLoader.Tick(DeltaTime);
+  }
+  
+  testNanite();
 
   if (isTestSaveUrlToUasset) 
   {
@@ -61,10 +207,7 @@ void AVrdCesium3DTilesetBase::Tick(float DeltaTime)
     isTestSaveUrlToUasset = false;
   }
 
-  /*if (GetIsSaveUrlToUassetCompleted())
-  {
-    ResetSaveUrlToUassetState();
-  }*/
+  CachedMeshLoader.Tick(DeltaTime, GetWorld());
 }
 
 void AVrdCesium3DTilesetBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -85,24 +228,27 @@ void AVrdCesium3DTilesetBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 bool AVrdCesium3DTilesetBase::ShouldTickIfViewportsOnly() const
 {
-  return bIsTickInEditor;
+  return UpdateInEditor;
 }
 
-void AVrdCesium3DTilesetBase::OnConstruction(const FTransform& transform) {
+void AVrdCesium3DTilesetBase::OnConstruction(const FTransform& transform)
+{
     Super::OnConstruction(transform);
 }
 
 void AVrdCesium3DTilesetBase::ResetSaveUrlToUassetState()
 {
-  SaveUrlToUassetState = ESaveUrlToUassetState::None;
-  PrimaryActorTick.bCanEverTick = true;
   DestroyTileset();
+
+  SaveUrlToUassetState = ESaveUrlToUassetState::None;
+  UpdateInEditor = true;
+  PrimaryActorTick.bCanEverTick = true;
 }
 
 bool AVrdCesium3DTilesetBase::SaveUrlToUasset(const FString& InUrl, const FString& InSaveDir)
 {
     PrimaryActorTick.bCanEverTick = false;
-    bIsTickInEditor = false;
+    UpdateInEditor = false;
 
     SaveUrlToUassetState = ESaveUrlToUassetState::InProgress;
     SaveUrlDir = InSaveDir;
@@ -295,6 +441,19 @@ void AVrdCesium3DTilesetBase::SaveTileToUasset(UCachedTile* Tile, const FString&
     AssetUtil::SaveUObject(NewStaticMesh, Uri, Outdir, SaveArgs);
 }
 
+void AVrdCesium3DTilesetBase::SetForceRenderAllTile(bool bValue)
+{
+  bForceRenderAllTile = bValue;
+  if (bForceRenderAllTile)
+  {
+    TilesetLoader.RequestLoadTileset(this, GetUrl(), LoadBatchCount, TilesetTimeout, EVrdTilesetLoaderMode::Render);
+  }
+  else
+  {
+    TilesetLoader.CancelLoadTileset();
+  }
+}
+
 void AVrdCesium3DTilesetBase::ReserveCachedTiles(int32 Num) {
   _cachedTiles.Reserve(Num);
 }
@@ -307,7 +466,7 @@ void AVrdCesium3DTilesetBase::AddCachedTile(UCachedTile* Value) {
     }
 
 #if UE_BUILD_DEVELOPMENT
-    {
+    /*{
       for (auto& e : _cachedTiles) 
       {
         if (FName {e->name} == FName {Value->name}) 
@@ -315,7 +474,7 @@ void AVrdCesium3DTilesetBase::AddCachedTile(UCachedTile* Value) {
             UE_LOG(LogTemp, Warning, TEXT("not a unique name for mesh: %s"), *Value->name);
         }
       }
-    }
+    }*/
 #endif
 
     _cachedTiles.Add(Value);
@@ -356,6 +515,7 @@ void AVrdCesium3DTilesetBase::ClearCacedTiles()
     }
   }
   _cachedTiles.Empty();
+
 }
 
 FString AVrdCesium3DTilesetBase::GetExportDirectory() const
@@ -385,6 +545,7 @@ void AVrdCesiumSaveUrlsToUassetMonitor::RequestSaveUrlsToUasset(const TArray<FSt
     IsSaveUrlsToUassetInProgress = true;
     IsCloseUnrealAfterCompleted = IsCloseUnrealAfterCompleted_;
     Urls = InUrls;
+    SaveDir = InSaveDir;
     curUrlIndex = 0;
   }
 
@@ -411,6 +572,10 @@ void AVrdCesiumSaveUrlsToUassetMonitor::BeginPlay()
 void AVrdCesiumSaveUrlsToUassetMonitor::Tick(float DeltaTime)
 {
   Super::Tick(DeltaTime);
+
+  if (this->Tileset) {
+    LoadCachedMeshCbCounter = Tileset->CachedMeshLoader.LoadCachedMeshCbCounter;
+  }
 
   if (isTestSaveUrlsToUasset)
   {
@@ -469,19 +634,21 @@ void AVrdCesiumSaveUrlsToUassetMonitor::SaveUrlsToUassetUpdate(float DeltaTime)
   else if (Tileset->GetIsSaveUrlToUassetReady())
   {
     Tileset->SaveUrlToUasset(Urls[curUrlIndex], SaveDir);
-    TilesetLoader.RequestLoadTileset(Tileset, Urls[curUrlIndex], LoadBatchCount, TilesetTimeout);
+    TilesetLoader.RequestLoadTileset(Tileset, Urls[curUrlIndex], LoadBatchCount, TilesetTimeout, EVrdTilesetLoaderMode::SaveTile);
   }
 
   TilesetLoader.Tick(DeltaTime);
 }
 
-void FVrdTilesetLoader::RequestLoadTileset(AVrdCesium3DTilesetBase* Tileset, FString Url_, uint32 BatchCount_, float TimesetTimeout_)
+void FVrdTilesetLoader::RequestLoadTileset(AVrdCesium3DTilesetBase* Tileset, FString Url_, uint32 BatchCount_, float TimesetTimeout_, LoaderMode Mode_)
 {
   Reset();
   VrdTileset = Tileset;
   BatchCount = BatchCount_;
   LoadingState = EVrdTilesetLoadingState::None;
   TilesetTimeout = TimesetTimeout_;
+
+  Mode = Mode_;
   // FGenericPlatformProcess::ConditionalSleep(fnIsSaveCompleted, 0.1f);*/
 }
 
@@ -515,6 +682,7 @@ void FVrdTilesetLoader::Tick(float DeltaTime)
       case EVrdTilesetLoadingState::LoadBatch:        { _loadTileBatchTick(rootTile, rootTileset); } break;
       case EVrdTilesetLoadingState::LoadSubBatch:     { _loadTileBatchTick(rootTile, rootTileset); } break;
       case EVrdTilesetLoadingState::BatchCompleted:   { _loadTileBatchEnd(rootTile, rootTileset); } break;
+      case EVrdTilesetLoadingState::OnCompleted:      { _loadTilesetOnCompleted(rootTile, rootTileset); } break;
       case EVrdTilesetLoadingState::Completed:        { _loadTilesetCompleted(rootTile, rootTileset); } break;
       default: {} break;
     }
@@ -527,6 +695,7 @@ void FVrdTilesetLoader::Tick(float DeltaTime)
       LoadingState = EVrdTilesetLoadingState::Failed;
     }
   }
+  
 }
 
 void FVrdTilesetLoader::Reset()
@@ -546,6 +715,17 @@ void FVrdTilesetLoader::Reset()
 
   TilesetTimeout = 0.0f;
   TilesetTimeoutTimer = 0.0f;
+}
+
+void FVrdTilesetLoader::LogBatchInfo()
+{
+  if (!bLogInfo)
+  {
+    return;
+  }
+
+  UE_LOG(LogTemp, Warning, TEXT("FVrdTilesetLoader::GetNumberOfTilesLoaded: %d"), GetNumberOfTilesLoaded());
+  UE_LOG(LogTemp, Warning, TEXT("LoadedCount: %d / %d"), LastLoadedTileCount, TileList.Num());
 }
 
 void FVrdTilesetLoader::_getAllTiles(Tile* Tile_, Tileset* Tileset_)
@@ -596,6 +776,7 @@ void FVrdTilesetLoader::_loadTileBatchTick(Tile* RootTile_, Tileset* Tileset_)
                         || (TileState == TileLoadState::FailedTemporarily)
                         || (TileState == TileLoadState::Failed)
     );
+
     isCompleted &= isTileLoaded;
     if (isTileLoaded)
     {
@@ -634,27 +815,64 @@ void FVrdTilesetLoader::_loadTileBatchTick(Tile* RootTile_, Tileset* Tileset_)
   }
 }
 
+template<class T>
+void ToStdVector_Copy(std::vector<T>& Out, const TArray<T>& Data)
+{
+  Out.clear();
+  Out.reserve(Data.Num());
+  for (auto& e : Data)
+  {
+    Out.emplace_back(e);
+  }
+}
+
 void FVrdTilesetLoader::_loadTileBatchEnd(Tile* RootTile_, Tileset* Tileset_)
 {
-  VrdTileset->SaveCachedTilesToUasset();
-  VrdTileset->ClearCacedTiles();
+  if (Mode == EVrdTilesetLoaderMode::SaveTile)
+  {
+    VrdTileset->SaveCachedTilesToUasset();
+    VrdTileset->ClearCacedTiles();
 
-  // if unload parent, if may affect the flatten tileList
-  unLoadTileListIfLeaf(LoadTileListBatch);
-  unLoadTileListIfLeaf(LoadTileListSubBatch);
+    // if unload parent, if may affect the flatten tileList
+    unLoadTileListIfLeaf(LoadTileListBatch);
+    unLoadTileListIfLeaf(LoadTileListSubBatch);
+  }
+  else if (Mode == EVrdTilesetLoaderMode::Render)
+  {
+    check(VrdTileset);
+
+    std::vector<Tile*> Tiles;
+    ToStdVector_Copy(Tiles, LoadTileListBatch.getTiles());
+    //VrdTileset->updateLastViewUpdateResultState()
+    VrdTileset->showTilesToRender(Tiles);
+
+    ToStdVector_Copy(Tiles, LoadTileListSubBatch.getTiles());
+    VrdTileset->showTilesToRender(Tiles);
+
+    LoadTileListBatch.clear();
+    LoadTileListSubBatch.clear();
+  }
 
   if (LastLoadedTileCount >= TileList.Num())
   {
-    LoadingState = EVrdTilesetLoadingState::Completed;
+    LoadingState = EVrdTilesetLoadingState::OnCompleted;
   } else
   {
     LoadingState = EVrdTilesetLoadingState::LoadBatchBegin;
   }
+
+  LogBatchInfo();
+}
+
+void FVrdTilesetLoader::_loadTilesetOnCompleted(Tile* RootTile_, Tileset* Tileset_)
+{
+  LogBatchInfo();
+  LoadingState = EVrdTilesetLoadingState::Completed;
 }
 
 void FVrdTilesetLoader::_loadTilesetCompleted(Tile* RootTile_, Tileset* Tileset_)
 {
-
+  
 }
 
 void FVrdTilesetLoader::unLoadTileListIfLeaf(FTileList& TileList_)
@@ -672,4 +890,190 @@ void FVrdTilesetLoader::unLoadTileListIfLeaf(FTileList& TileList_)
 
 int32 FVrdTilesetLoader::GetTotalBatchCount() const { return FMath::CeilToInt(TileList.Num() / (float)BatchCount); }
 
-bool FVrdTilesetLoader::IsCompleted() const { return LoadingState == EVrdTilesetLoadingState::Completed || LoadingState == EVrdTilesetLoadingState::Failed; }
+bool FVrdTilesetLoader::IsCompleted() const {
+  return LoadingState == EVrdTilesetLoadingState::Completed ||
+         LoadingState == EVrdTilesetLoadingState::Failed;
+}
+
+int32 FVrdTilesetLoader::GetNumberOfTilesLoaded() const noexcept
+{
+  return VrdTileset && VrdTileset->GetTileset() ? VrdTileset->GetTileset()->getNumberOfTilesLoaded() : 0;
+}
+
+UStaticMesh* FVrdCachedMeshLoader::LoadCachedMesh(const FString& MeshGamepath, TFunction<void()>&& FnPostLoadMesh, FLoadCachedMesh_TestParams params)
+{
+  if (false)
+  {
+    if (!TileMeshes)
+    {
+      TileMeshes = NewObject<UTileMeshes>(GetTransientPackage(), FName{TileMeshesName}, EObjectFlags::RF_Public | EObjectFlags::RF_Standalone);
+      AssetUtil::SaveUObject(TileMeshes, TileMeshesName, TileMeshesSaveDir);
+      TileMeshes->tileMeshes.Reserve(100000); // new reserve will crash, just a workaround
+    }
+
+    auto* MeshComp = params.meshComp;
+    const auto& PrimData = Cast<ICesiumPrimitive>(MeshComp)->getPrimitiveData();
+
+    FTileMesh& TileMesh = TileMeshes->tileMeshes.Add(*MeshGamepath);
+    //TileMesh.mesh = Cast<UStaticMesh>(UAssetManager::GetStreamableManager().LoadSynchronous(FSoftObjectPath{MeshGamepath}));
+    TileMesh.transform = FTransform(
+                        VecMath::createMatrix(PrimData.pTilesetActor->GetCesiumTilesetToUnrealRelativeWorldTransform() * PrimData.HighPrecisionNodeTransform)
+                    );
+    //TileMeshes->tileMeshes.Add({*MeshGamepath, TileMesh});
+    auto NewHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(FSoftObjectPath{MeshGamepath},
+      [this, &TileMesh, MeshGamepath]()
+      {
+        auto* Mesh = this->FindStaticMesh(MeshGamepath);
+        TileMesh.mesh = Mesh;
+        SpwanAllToWorldCallbackCounter++;
+      });
+    AddHandle(MeshGamepath, NewHandle);
+
+    return nullptr;
+  }
+
+  check(_meshpaths.Find(MeshGamepath) == nullptr);
+  _meshpaths.Add(MeshGamepath);
+  _loadCachedMeshParams.Add(params);
+
+  UStaticMesh* pMesh = nullptr;
+
+  FStreamableHandle* Handle = FindHandle(MeshGamepath);
+  if (Handle/* && Handle->HasLoadCompleted()*/)
+  {
+    check(Handle->HasLoadCompleted());
+    pMesh = Cast<UStaticMesh>(Handle->GetLoadedAsset());
+    return pMesh;
+  }
+
+  if (true)
+  {
+    auto NewHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(FSoftObjectPath{MeshGamepath}, std::move(FnPostLoadMesh));
+    AddHandle(MeshGamepath, NewHandle);
+  }
+  else
+  {
+    TFunction<void()> fn = []() {};
+    auto NewHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(FSoftObjectPath{MeshGamepath}, std::move(fn));
+    NewHandle->WaitUntilComplete();
+    pMesh = Cast<UStaticMesh>(NewHandle->GetLoadedAsset());
+  }
+
+
+  return pMesh;
+}
+
+void FVrdCachedMeshLoader::Reset()
+{
+  for (auto& Handle : _cachedHandles) {
+    if (Handle.Value) {
+      Handle.Value->CancelHandle();
+    }
+  }
+  //_pendingCompleteHandles.Empty();
+  _cachedHandles.Empty();
+
+
+  _meshpaths.Empty();
+  _loadCachedMeshParams.Empty();
+}
+
+void FVrdCachedMeshLoader::Tick(float DeltaTime, UWorld* World)
+{
+
+  if (isTestCheckLoadingMesh) {
+
+    if (UAssetManager::GetStreamableManager().AreAllAsyncLoadsComplete()) {
+    } else {
+      UE_LOG(LogTemp, Warning, TEXT("not all async is completed"));
+    }
+
+    for (auto& path : _meshpaths) {
+      bool isCompleted =
+          UAssetManager::GetStreamableManager().IsAsyncLoadComplete(path);
+      if (!isCompleted) {
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("loading mesh is not completed: %s"),
+            *path.ToString());
+      }
+    }
+
+    isTestCheckLoadingMesh = false;
+  }
+
+  if (isTestSetAllMeshVisible) {
+    
+    for (auto& e : _loadCachedMeshParams)
+    {
+      e.meshComp->SetVisibility(true, true);
+      e.meshComp->SetVisibleFlag(true);
+    }
+    isTestSetAllMeshVisible = false;
+  }
+
+  if (TileMeshes && isTestSpwanAllToWorld) {
+    TileMeshes->SpwanAllToWorld(World);
+    isTestSpwanAllToWorld = false;
+  }
+
+  if (isTestSpwanMeshToWorld) {
+    isTestSpwanMeshToWorld = false;
+
+    TestSpawnMeshHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(FSoftObjectPath{TestSpwanMeshpath},
+      [this, World]()
+      {
+        bool IsActive         = TestSpawnMeshHandle->IsActive();
+        bool HasLoadCompleted = TestSpawnMeshHandle->HasLoadCompleted();
+        auto* Mesh = Cast<UStaticMesh>(TestSpawnMeshHandle->GetLoadedAsset());
+
+        UTileMeshes::SpwanMeshActor(World, Mesh, {});
+      });
+  }
+
+  /*TArray<FStreamableHandle*> LoadingHandles;
+  LoadingHandles.Reserve(_pendingCompleteHandles.Num());
+  for (auto* Handle : _pendingCompleteHandles)
+  {
+    if (Handle->HasLoadCompleted())
+    {
+      Handle->WaitUntilComplete();
+    }
+    else
+    {
+      LoadingHandles.Add(Handle);
+    }
+  }
+  _pendingCompleteHandles = LoadingHandles;*/
+
+}
+
+void FVrdCachedMeshLoader::AddHandle(const FString& Name, TSharedPtr<FStreamableHandle>& Handle)
+{
+  check(_cachedHandles.Find(Name) == nullptr);
+  _cachedHandles.Add(Name, Handle);
+}
+
+FStreamableHandle* FVrdCachedMeshLoader::FindHandle(const FString& Name)
+{
+  auto* it = _cachedHandles.Find(Name);
+  return it ? it->Get() : nullptr;
+}
+
+UStaticMesh* FVrdCachedMeshLoader::FindStaticMesh(const FString& Name)
+{
+  auto* it = FindHandle(Name);
+  if (it)
+  {
+    check(it->HasLoadCompleted());
+    //it->WaitUntilComplete();
+    auto* LoadedAsset = it->GetLoadedAsset();
+    auto* Mesh = Cast<UStaticMesh>(LoadedAsset);
+    if (!Mesh) {
+      UE_LOG(LogTemp, Warning, TEXT("static mesh is nullptr"));
+    }
+    return Mesh;
+  }
+  return nullptr;
+}

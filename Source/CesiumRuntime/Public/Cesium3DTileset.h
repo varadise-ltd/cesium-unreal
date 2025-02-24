@@ -1189,7 +1189,7 @@ public:
    */
   void UpdateTransformFromCesium();
 
-private:
+public:
   /**
    * The event handler for ACesiumGeoreference::OnEllipsoidChanged.
    */

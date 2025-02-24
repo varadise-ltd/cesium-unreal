@@ -232,29 +232,49 @@ UPackage* AssetUtil::SaveUObject(UObject* UObj, const FString& AssetName, const 
 
 void UTileMeshes::SpwanAllToWorld(UWorld* World)
 {
-    auto* Actor = World->SpawnActor(AActor::StaticClass());
-    if (!Actor)
-		return;
+  auto* Actor = SpwanMeshActor(World, nullptr, FTransform{});
+  if (!Actor) {
+    return;
+  }
 
-    {
-      auto* NewComponent = NewObject<UBillboardComponent>(Actor);
-      NewComponent->RegisterComponent();
-      NewComponent->AttachToComponent(Actor->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
-      Actor->AddInstanceComponent(NewComponent);
-      Actor->SetRootComponent(NewComponent);
-    }
-
-    check(World);
-	for (auto& e : tileMeshes) 
+  uint32 idx = 0;
+  for (auto& e : tileMeshes)
 	{
-		auto* NewComponent = NewObject<UStaticMeshComponent>(Actor);
-		NewComponent->RegisterComponent();
-		NewComponent->AttachToComponent(Actor->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
-		Actor->AddInstanceComponent(NewComponent);
-
-		NewComponent->SetStaticMesh(e.Value.mesh);
-
-		//Actor->SetActorTransform(e.Value.transform);
-    NewComponent->SetWorldTransform(e.Value.transform);
+    if (idx == 1742) {
+      UE_LOG(LogTemp, Warning, TEXT("spwan all idx: %d"), idx);
+    }
+    AddMeshComponent(Actor, e.Value.mesh, e.Value.transform);
+    idx++;
 	}
+}
+
+AActor* UTileMeshes::SpwanMeshActor(UWorld* World, UStaticMesh* Mesh, const FTransform& Transform)
+{
+  check(World);
+
+  auto* Actor = World->SpawnActor(AActor::StaticClass());
+  if (!Actor)
+		return nullptr;
+  {
+    auto* NewComponent = NewObject<UBillboardComponent>(Actor);
+    NewComponent->RegisterComponent();
+    NewComponent->AttachToComponent(Actor->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
+    Actor->AddInstanceComponent(NewComponent);
+    Actor->SetRootComponent(NewComponent);
+  }
+  AddMeshComponent(Actor, Mesh, Transform);
+  return Actor;
+}
+
+void UTileMeshes::AddMeshComponent(AActor* Actor, UStaticMesh* Mesh, const FTransform& Transform)
+{
+	auto* NewComponent = NewObject<UStaticMeshComponent>(Actor);
+	NewComponent->RegisterComponent();
+	NewComponent->AttachToComponent(Actor->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
+	Actor->AddInstanceComponent(NewComponent);
+
+	NewComponent->SetStaticMesh(Mesh);
+
+	//Actor->SetActorTransform(e.Value.transform);
+  NewComponent->SetWorldTransform(Transform);
 }

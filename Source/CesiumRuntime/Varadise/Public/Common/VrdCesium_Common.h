@@ -51,6 +51,10 @@ public:
 	UPROPERTY(VisibleAnywhere) TMap<FName, FTileMesh> tileMeshes;
 
 public:
+  static AActor* SpwanMeshActor(UWorld* World, UStaticMesh* Mesh, const FTransform& Transform);
+  static void AddMeshComponent(AActor* Actor, UStaticMesh* Mesh, const FTransform& Transform);
+
+public:
 	void SpwanAllToWorld(UWorld* World);
 };
 
