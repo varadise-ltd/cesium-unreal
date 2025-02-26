@@ -2,9 +2,6 @@
 
 #include "Cesium3DTilesSelection/Tileset.h"
 
-#include "AssetRegistry/AssetRegistryModule.h"
-#include <RawMesh.h>
-#include <MeshDescription.h>
 #include <UObject/SavePackage.h>
 
 #include <Blueprint/WidgetLayoutLibrary.h>
@@ -12,10 +9,25 @@
 #include <Kismet/KismetSystemLibrary.h>
 #include <Components/BillboardComponent.h>
 
+#include <PhysicsEngine/BodySetup.h>
+#include <PhysicsEngine/PhysicsSettings.h>
+
 #include <Async/Async.h>
 #include <Async/TaskGraphInterfaces.h>
 
+#include <Components/StaticMeshComponent.h>
+#include <RawMesh.h>
+#include <MeshDescription.h>
+
+#include <MaterialDomain.h>
+#include <Materials/MaterialInstanceDynamic.h>
+
 #include "vrdCesium_Common.generated.h"
+
+#ifndef CESIUMRUNTIME_API
+  #define CESIUMRUNTIME_API
+#endif // undef CESIUMRUNTIME_API
+
 
 class Cesium3DTilesSelection::Tile;
 class UCesiumGltfComponent;

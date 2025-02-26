@@ -3649,7 +3649,7 @@ static void VrdLoadPrimitiveGameThreadPartWithCachedMesh(
 	        pMesh->AttachToComponent(vrdTileset->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
         };
       
-      FLoadCachedMesh_TestParams params;
+      FCesiumLoadCachedMesh_TestParams params;
       params.meshComp = pMesh;
       params.gltfComp = pGltf;
       params.matInst = pMaterial;

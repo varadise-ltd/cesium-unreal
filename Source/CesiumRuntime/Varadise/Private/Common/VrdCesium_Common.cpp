@@ -1,4 +1,5 @@
 #include "CesiumRuntime/Varadise/Public/Common/VrdCesium_Common.h"
+#include <Runtime/AssetRegistry/Public/AssetRegistry/AssetRegistryModule.h>
 
 void MeshUtil::GetRawMeshTo(FRawMesh& Out, const FStaticMeshVertexBuffers& VtxBufs, const FRawStaticIndexBuffer& IdxBuf)
 {

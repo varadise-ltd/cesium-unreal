@@ -80,6 +80,7 @@ public class CesiumRuntime : ModuleRules
             {
                 "RawMesh",
                 "InputCore",
+                "AssetRegistry",
 
                 "Core",
                 "RHI",
