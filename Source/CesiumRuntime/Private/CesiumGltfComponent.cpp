@@ -3628,7 +3628,8 @@ static void VrdLoadPrimitiveGameThreadPartWithCachedMesh(
 #endif // 0
     
 
-    if (vrdTileset && vrdTileset->isLoadFromPak) {
+    if (vrdTileset && vrdTileset->bIsLoadFromPak)
+    {
       FString loadName = FString(loadResult.name.c_str());
       FString meshGamepath = vrdTileset->GetCachedTileUassetGamepath(model, loadName);
 
@@ -3648,14 +3649,23 @@ static void VrdLoadPrimitiveGameThreadPartWithCachedMesh(
           vrdTileset->CachedMeshLoader.LoadCachedMeshCbCounter++;
 	        pMesh->AttachToComponent(vrdTileset->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
         };
-      
+
+      #if !VRD_CESIUM_DEBUG
+
+      pStaticMesh = vrdTileset->CachedMeshLoader.LoadCachedMesh(meshGamepath, fnPostLoadMesh);
+      //pStaticMesh = Cast<UStaticMesh>(UAssetManager::GetStreamableManager().LoadSynchronous(FSoftObjectPath{meshGamepath}));
+
+      #else
+
       FCesiumLoadCachedMesh_TestParams params;
       params.meshComp = pMesh;
       params.gltfComp = pGltf;
       params.matInst = pMaterial;
-      
+
       pStaticMesh = vrdTileset->CachedMeshLoader.LoadCachedMesh(meshGamepath, fnPostLoadMesh, params);
-      //pStaticMesh = Cast<UStaticMesh>(UAssetManager::GetStreamableManager().LoadSynchronous(FSoftObjectPath{meshGamepath}));
+
+      #endif // 0
+
     }
   }
   //AVrdCesium3DTilesetBase::SetupStaticMesh(true, createNavCollision, pStaticMesh, pMesh, pMaterial, pGltf, loadResult.pCollisionMesh);
@@ -3689,7 +3699,7 @@ vrdLoadPrimitiveGameThreadPart(
       return;
     }
 
-    bLoadCachedMesh = isUassetExist && vrdTileset->isLoadFromPak;
+    bLoadCachedMesh = isUassetExist && vrdTileset->bIsLoadFromPak;
     if (bLoadCachedMesh)
     {
       return VrdLoadPrimitiveGameThreadPartWithCachedMesh(
@@ -3703,10 +3713,6 @@ vrdLoadPrimitiveGameThreadPart(
         instanceTransforms,
         pInstanceFeatures
       );
-    }
-    else
-    {
-      check(false);
     }
   }
 
@@ -4004,13 +4010,16 @@ void UCesiumGltfComponent::SetCollisionEnabled(
 
 void UCesiumGltfComponent::BeginDestroy() {
 
-  TArray<USceneComponent*> Children;
-  GetChildrenComponents(false, Children);
-  for (auto& child : Children) {
-    if (auto* pMesh = Cast<UStaticMeshComponent>(child)) {
-      pMesh->SetStaticMesh(nullptr);
+  ForEachObjectWithOuter(this,
+    []
+    (UObject* Object)
+    {
+      if (auto* pMesh = Cast<UStaticMeshComponent>(Object))
+      {
+        pMesh->SetStaticMesh(nullptr);
+      }
     }
-  }
+  );
 
   // Clear everything we can in order to reduce memory usage, because this
   // UObject might not actually get deleted by the garbage collector until

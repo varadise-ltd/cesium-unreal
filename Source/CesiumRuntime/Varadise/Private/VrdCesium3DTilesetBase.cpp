@@ -14,10 +14,7 @@
 AVrdCesium3DTilesetBase::AVrdCesium3DTilesetBase()
 	: Super()
 {
-  IsLoadFromUasset              = false;
   SaveUrlToUassetState          = ESaveUrlToUassetState::None; 
-  //IsSaveUrlToUassetInProgress   = false;
-  //IsSaveUrlToUassetCompleted    = false;
 }
 
 AVrdCesium3DTilesetBase::~AVrdCesium3DTilesetBase()
@@ -25,48 +22,36 @@ AVrdCesium3DTilesetBase::~AVrdCesium3DTilesetBase()
 	
 }
 
-void AVrdCesium3DTilesetBase::testNanite()
+void AVrdCesium3DTilesetBase::GetMeshNameByMouseLineTrace(FString& OutName)
 {
-  if (isClearTestNanite) {
-    testNaniteActors.Empty();
-    isClearTestNanite = false;
-  }
-
-  if (!isTestNanite) {
-    return;
-  }
-
   auto* world = GetWorld();
   if (!world) {
     return;
   }
 
-  testNaniteActors.Reserve(testNaniteCount);
-  for (size_t i = 0; i < testNaniteCount; i++) {
-    auto* actor = world->SpawnActor<AActor>();
-
-    //auto* meshComp = actor->CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
-    UStaticMeshComponent* meshComp = nullptr;
-    {
-      auto* newComponent = NewObject<UStaticMeshComponent>(actor);
-      newComponent->RegisterComponent();
-      newComponent->AttachToComponent(actor->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
-      actor->AddInstanceComponent(newComponent);
-      meshComp = newComponent;
-    }
-
-    meshComp->SetStaticMesh(testNaniteMesh);
-    if (testNaniteMesh->GetStaticMaterials().IsEmpty()) {
-      testNaniteMesh->AddMaterial(UMaterial::GetDefaultMaterial(EMaterialDomain::MD_Surface));
-    }
-    UMaterialInstanceDynamic* DynamicMaterial = UMaterialInstanceDynamic::Create(testNaniteMaterial, actor);
-    meshComp->SetMaterial(0, DynamicMaterial);
-
-    testNaniteActors.Add(actor);
+  auto* playerCtrl = UGameplayStatics::GetPlayerController(world, 0);
+  if (!playerCtrl) {
+        return;
   }
 
-  isTestNanite = false;
+  FVector worldPos, worldDir;
+  playerCtrl->DeprojectMousePositionToWorld(worldPos, worldDir);
+
+  TArray<TEnumAsByte<EObjectTypeQuery>> objectTypes;
+  objectTypes.Add(UEngineTypes::ConvertToObjectType(ECC_WorldStatic));
+
+  FHitResult hit;
+  UKismetSystemLibrary::LineTraceSingleForObjects(world, worldPos, worldPos + worldDir * 9999.0f, objectTypes, true, {}, EDrawDebugTrace::None, hit, true);
+    
+  if (auto* Comp = Cast<UStaticMeshComponent>(hit.GetComponent()))
+  {
+    if (auto Mesh = Comp->GetStaticMesh())
+    {
+      Mesh->GetName((OutName));
+    }
+  }
 }
+
 
 void AVrdCesium3DTilesetBase::SetupStaticMesh(
     bool bIsInit,
@@ -186,15 +171,48 @@ void AVrdCesium3DTilesetBase::Tick(float DeltaTime)
     TilesetLoader.Tick(DeltaTime);
   }
   
-  testNanite();
+  // testNanite();
 
-  if (isTestSaveUrlToUasset) 
+  if (bIsTestSaveUrlToUasset) 
   {
     SaveUrlToUasset(SaveUrl, SaveUrlDir);
-    isTestSaveUrlToUasset = false;
+    bIsTestSaveUrlToUasset = false;
   }
 
   CachedMeshLoader.Tick(DeltaTime, GetWorld());
+
+  {
+    if (InputUtil::IsLeftMouseDown(GetWorld()))
+    {
+      FString MeshName;
+      GetMeshNameByMouseLineTrace(MeshName);
+      if (!MeshName.IsEmpty())
+      {
+        UE_LOG(LogTemp, Warning, TEXT("MeshName: %s"), *MeshName);
+      }
+    }
+
+    if (GLastKeyLevelEditingViewportClient)
+    {
+	    if (GLastKeyLevelEditingViewportClient->Viewport->KeyState(EKeys::LeftMouseButton))
+	    {
+		    FString MeshName;
+	      if (auto* world = GetWorld())
+	      {
+          FHitResult Hit;
+		      LineTrace_Editor(Hit, GetWorld());
+          if (auto* Comp = Cast<UStaticMeshComponent>(Hit.GetComponent()))
+          {
+            if (auto Mesh = Comp->GetStaticMesh())
+            {
+              Mesh->GetName((MeshName));
+            }
+            UE_LOG(LogTemp, Warning, TEXT("MeshName: %s"), *MeshName);
+          }
+	      }
+	    }
+    }
+  }
 }
 
 void AVrdCesium3DTilesetBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -221,6 +239,16 @@ bool AVrdCesium3DTilesetBase::ShouldTickIfViewportsOnly() const
 void AVrdCesium3DTilesetBase::OnConstruction(const FTransform& transform)
 {
     Super::OnConstruction(transform);
+}
+
+void AVrdCesium3DTilesetBase::EditorKeyPressed(FKey Key, EInputEvent Event)
+{
+  Super::EditorKeyPressed(Key, Event);
+
+  if (Key == EKeys::LeftMouseButton && Event == EInputEvent::IE_Pressed)
+  {
+
+  }
 }
 
 void AVrdCesium3DTilesetBase::ResetSaveUrlToUassetState()
@@ -306,7 +334,7 @@ void AVrdCesium3DTilesetBase::SaveCachedTilesToUasset()
         UE_LOG(LogTemp, Warning, TEXT("finished saving %d/%d"), i + 1, Tiles.Num());
 
         #if UE_BUILD_DEVELOPMENT
-        auto name = FName{Tile->name};
+        auto name = FName{Tile->Name};
         check(tileMeshes.Find(name) == nullptr);
         tileMeshes.Add({name, {}});
         #endif // UE_BUILD_DEVELOPMENT
@@ -318,12 +346,12 @@ void AVrdCesium3DTilesetBase::SaveCachedTilesToUasset()
 UCachedTile* AVrdCesium3DTilesetBase::CacheTileStaticMesh(const CesiumGltf::Model& Model, const FString& Name, TUniquePtr<class FStaticMeshRenderData>&& RenderData)
 {
   auto* vrdTile = NewObject<UCachedTile>();
-  vrdTile->name = GetMeshName(Name);
-  vrdTile->meshComp = NewObject<UStaticMeshComponent>();
+  vrdTile->Name = GetMeshName(Name);
+  vrdTile->MeshComp = NewObject<UStaticMeshComponent>();
 
-  auto* pStaticMesh = NewObject<UStaticMesh>(vrdTile->meshComp);
+  auto* pStaticMesh = NewObject<UStaticMesh>(vrdTile->MeshComp);
   pStaticMesh->NeverStream = true;
-  vrdTile->meshComp->SetStaticMesh(pStaticMesh);
+  vrdTile->MeshComp->SetStaticMesh(pStaticMesh);
   pStaticMesh->SetRenderData(std::move(RenderData));
 
   return vrdTile; 
@@ -396,16 +424,16 @@ FString AVrdCesium3DTilesetBase::GetMeshName(const FString& Name) const
 
 void AVrdCesium3DTilesetBase::SaveTileToUasset(UCachedTile* Tile, const FString& Outdir, const FMeshBuildSettings& BuildSettings, const FMeshNaniteSettings& NaniteSettings, FSavePackageArgs SaveArgs)
 {
-    if (!Tile || !Tile->meshComp)
+    if (!Tile || !Tile->MeshComp)
     {
         return;
     }
 
-    const FString& Uri = Tile->name;
+    const FString& Uri = Tile->Name;
     UStaticMesh* NewStaticMesh = NewObject<UStaticMesh>();
     NewStaticMesh->SetFlags(RF_Public | RF_Standalone);
     
-    auto StaticMesh = Tile->meshComp->GetStaticMesh();
+    auto StaticMesh = Tile->MeshComp->GetStaticMesh();
     MeshUtil::StaticMesh_CopyFromRenderDataTo(NewStaticMesh, StaticMesh->GetRenderData(), BuildSettings, NaniteSettings);
     AssetUtil::SaveUObject(NewStaticMesh, Uri, Outdir, SaveArgs);
 }
@@ -424,7 +452,7 @@ void AVrdCesium3DTilesetBase::SetForceRenderAllTile(bool bValue)
 }
 
 void AVrdCesium3DTilesetBase::ReserveCachedTiles(int32 Num) {
-  _cachedTiles.Reserve(Num);
+  _CachedTiles.Reserve(Num);
 }
 
 void AVrdCesium3DTilesetBase::AddCachedTile(UCachedTile* Value) {
@@ -434,12 +462,12 @@ void AVrdCesium3DTilesetBase::AddCachedTile(UCachedTile* Value) {
       return;
     }
 
-    _cachedTiles.Add(Value);
+    _CachedTiles.Add(Value);
 }
 
 void AVrdCesium3DTilesetBase::SetCachedTiles(TArray<UCachedTile*>&& Value) 
 {
-  _cachedTiles = std::move(Value);
+  _CachedTiles = std::move(Value);
 }
 
 void AVrdCesium3DTilesetBase::CreateTileMeshes(const FString& AssetName, const FString& OutputDir)
@@ -456,25 +484,72 @@ void AVrdCesium3DTilesetBase::CreateTileMeshes(const FString& AssetName, const F
 
 void AVrdCesium3DTilesetBase::ClearCachedTiles()
 {
-  if (isLoadFromPak) 
+  if (bIsLoadFromPak) 
   {
-    for (auto& e : _cachedTiles) 
+    for (auto& e : _CachedTiles) 
     {
       if (!e)
       {
         continue;
       }
 
-      if (e->meshComp)
+      if (e->MeshComp)
       {
-          e->meshComp->SetStaticMesh(nullptr);
+          e->MeshComp->SetStaticMesh(nullptr);
       }
     }
   }
-  _cachedTiles.Empty();
+  _CachedTiles.Empty();
 }
 
 FString AVrdCesium3DTilesetBase::GetExportDirectory() const
 {
   return FPaths::Combine(SaveUrlDir, GetUrlFilename(GetUrl()));
 }
+
+
+#if 0
+
+void AVrdCesium3DTilesetBase::testNanite()
+{
+  if (isClearTestNanite) {
+    testNaniteActors.Empty();
+    isClearTestNanite = false;
+  }
+
+  if (!isTestNanite) {
+    return;
+  }
+
+  auto* world = GetWorld();
+  if (!world) {
+    return;
+  }
+
+  testNaniteActors.Reserve(testNaniteCount);
+  for (size_t i = 0; i < testNaniteCount; i++) {
+    auto* actor = world->SpawnActor<AActor>();
+
+    //auto* meshComp = actor->CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
+    UStaticMeshComponent* meshComp = nullptr;
+    {
+      auto* newComponent = NewObject<UStaticMeshComponent>(actor);
+      newComponent->RegisterComponent();
+      newComponent->AttachToComponent(actor->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
+      actor->AddInstanceComponent(newComponent);
+      meshComp = newComponent;
+    }
+
+    meshComp->SetStaticMesh(testNaniteMesh);
+    if (testNaniteMesh->GetStaticMaterials().IsEmpty()) {
+      testNaniteMesh->AddMaterial(UMaterial::GetDefaultMaterial(EMaterialDomain::MD_Surface));
+    }
+    UMaterialInstanceDynamic* DynamicMaterial = UMaterialInstanceDynamic::Create(testNaniteMaterial, actor);
+    meshComp->SetMaterial(0, DynamicMaterial);
+
+    testNaniteActors.Add(actor);
+  }
+
+  isTestNanite = false;
+}
+#endif // 0

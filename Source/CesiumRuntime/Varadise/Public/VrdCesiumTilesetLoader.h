@@ -13,10 +13,27 @@
 class AVrdCesium3DTilesetBase;
 
 UENUM()
-enum class EVrdTilesetLoadingState : uint8 { None, LoadBatchBegin, LoadBatch, LoadSubBatch, BatchCompleted, OnCompleted, Completed, Failed, _Count };
+enum class EVrdTilesetLoadingState : uint8
+{
+  None,
+  LoadBatchBegin,
+  LoadBatch,
+  LoadSubBatch,
+  BatchCompleted,
+  OnCompleted,
+  Completed,
+  Failed,
+  _Count
+};
 
 UENUM()
-enum class EVrdTilesetLoaderMode : uint8 { None, SaveTile, Render, _Count };
+enum class EVrdTilesetLoaderMode : uint8
+{
+  None,
+  SaveTile,
+  Render,
+  _Count
+};
 
 USTRUCT()
 struct CESIUMRUNTIME_API FVrdCesiumTilesetLoader
@@ -51,14 +68,14 @@ public:
   int32 GetNumberOfTilesLoaded() const noexcept;
 
 private:
-  void _getAllTiles(Tile* RootTile_, Tileset* Tileset_);
-  void _loadTileBatchBegin(Tile* RootTile_, Tileset* Tileset_);
-  void _loadTileBatchTick(Tile* RootTile_, Tileset* Tileset_);
-  void _loadTileBatchEnd(Tile* RootTile_, Tileset* Tileset_);
-  void _loadTilesetOnCompleted(Tile* RootTile_, Tileset* Tileset_);
-  void _loadTilesetCompleted(Tile* RootTile_, Tileset* Tileset_);
+  void _GetAllTiles(Tile* RootTile_, Tileset* Tileset_);
+  void _LoadTileBatchBegin(Tile* RootTile_, Tileset* Tileset_);
+  void _LoadTileBatchTick(Tile* RootTile_, Tileset* Tileset_);
+  void _LoadTileBatchEnd(Tile* RootTile_, Tileset* Tileset_);
+  void _LoadTilesetOnCompleted(Tile* RootTile_, Tileset* Tileset_);
+  void _LoadTilesetCompleted(Tile* RootTile_, Tileset* Tileset_);
 
-  void unLoadTileListIfLeaf(FCesiumTileList& TileList_);
+  void UnLoadTileListIfLeaf(FCesiumTileList& TileList_);
   
 private:
   LoadedLinkedList LoadedTiles;

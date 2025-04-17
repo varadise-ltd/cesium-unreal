@@ -51,13 +51,13 @@ void FVrdCesiumTilesetLoader::Tick(float DeltaTime)
   {
     switch (LoadingState)
     {
-      case EVrdTilesetLoadingState::None:             { _getAllTiles(rootTile, rootTileset); } break;
-      case EVrdTilesetLoadingState::LoadBatchBegin:   { _loadTileBatchBegin(rootTile, rootTileset); } break;
-      case EVrdTilesetLoadingState::LoadBatch:        { _loadTileBatchTick(rootTile, rootTileset); } break;
-      case EVrdTilesetLoadingState::LoadSubBatch:     { _loadTileBatchTick(rootTile, rootTileset); } break;
-      case EVrdTilesetLoadingState::BatchCompleted:   { _loadTileBatchEnd(rootTile, rootTileset); } break;
-      case EVrdTilesetLoadingState::OnCompleted:      { _loadTilesetOnCompleted(rootTile, rootTileset); } break;
-      case EVrdTilesetLoadingState::Completed:        { _loadTilesetCompleted(rootTile, rootTileset); } break;
+      case EVrdTilesetLoadingState::None:             { _GetAllTiles(rootTile, rootTileset); } break;
+      case EVrdTilesetLoadingState::LoadBatchBegin:   { _LoadTileBatchBegin(rootTile, rootTileset); } break;
+      case EVrdTilesetLoadingState::LoadBatch:        { _LoadTileBatchTick(rootTile, rootTileset); } break;
+      case EVrdTilesetLoadingState::LoadSubBatch:     { _LoadTileBatchTick(rootTile, rootTileset); } break;
+      case EVrdTilesetLoadingState::BatchCompleted:   { _LoadTileBatchEnd(rootTile, rootTileset); } break;
+      case EVrdTilesetLoadingState::OnCompleted:      { _LoadTilesetOnCompleted(rootTile, rootTileset); } break;
+      case EVrdTilesetLoadingState::Completed:        { _LoadTilesetCompleted(rootTile, rootTileset); } break;
       default: {} break;
     }
   }
@@ -77,12 +77,12 @@ void FVrdCesiumTilesetLoader::Reset()
   VrdTileset = nullptr;
   pTilesetContentManager.reset();
 
-  TileList.clear();
+  TileList.Clear();
   LastLoadedTileCount = 0;
   BatchCount = 0;
 
-  LoadTileListBatch.clear();
-  LoadTileListSubBatch.clear();
+  LoadTileListBatch.Clear();
+  LoadTileListSubBatch.Clear();
   LastSubBatchTileCount = 0;
 
   LoadingState = EVrdTilesetLoadingState::None;
@@ -102,11 +102,11 @@ void FVrdCesiumTilesetLoader::LogBatchInfo()
   UE_LOG(LogTemp, Warning, TEXT("LoadedCount: %d / %d"), LastLoadedTileCount, TileList.Num());
 }
 
-void FVrdCesiumTilesetLoader::_getAllTiles(Tile* Tile_, Tileset* Tileset_)
+void FVrdCesiumTilesetLoader::_GetAllTiles(Tile* Tile_, Tileset* Tileset_)
 {
   if (!pTilesetContentManager)
   {
-    TileList.addTile(Tile_);
+    TileList.AddTile(Tile_);
     UE_LOG(LogTemp, Warning, TEXT("TileList.Num(): %d"), TileList.Num());
 
     pTilesetContentManager =
@@ -127,20 +127,20 @@ void FVrdCesiumTilesetLoader::_getAllTiles(Tile* Tile_, Tileset* Tileset_)
   }
 }
 
-void FVrdCesiumTilesetLoader::_loadTileBatchBegin(Tile* RootTile_, Tileset* Tileset_)
+void FVrdCesiumTilesetLoader::_LoadTileBatchBegin(Tile* RootTile_, Tileset* Tileset_)
 {
-  LoadTileListBatch.addRange(TileList.getTiles(), LastLoadedTileCount, BatchCount);
+  LoadTileListBatch.AddRange(TileList.GetTiles(), LastLoadedTileCount, BatchCount);
   LoadingState = EVrdTilesetLoadingState::LoadBatch;
 }
 
-void FVrdCesiumTilesetLoader::_loadTileBatchTick(Tile* RootTile_, Tileset* Tileset_)
+void FVrdCesiumTilesetLoader::_LoadTileBatchTick(Tile* RootTile_, Tileset* Tileset_)
 {
   uint32 loadedBatchCount = 0;
   bool  isLoadBatch   = LoadingState == EVrdTilesetLoadingState::LoadBatch;
   auto* TileListBatch = isLoadBatch ? &LoadTileListBatch : &LoadTileListSubBatch;
 
   bool isCompleted = true;
-  for (auto* pTile : TileListBatch->getTiles())
+  for (auto* pTile : TileListBatch->GetTiles())
   {
     auto& Tile_ = *pTile;
     auto TileState = Tile_.getState();
@@ -157,7 +157,7 @@ void FVrdCesiumTilesetLoader::_loadTileBatchTick(Tile* RootTile_, Tileset* Tiles
       continue;
     }
 
-    // addTileToLoadQueue
+    // AddTileToLoadQueue
     if (pTilesetContentManager->tileNeedsWorkerThreadLoading(Tile_))
     {
       pTilesetContentManager->loadTileContent(Tile_, Tileset_->getOptions());    // _processWorkerThreadLoadQueue
@@ -167,7 +167,7 @@ void FVrdCesiumTilesetLoader::_loadTileBatchTick(Tile* RootTile_, Tileset* Tiles
       pTilesetContentManager->finishLoading(Tile_, Tileset_->getOptions());      // _processMainThreadLoadQueue
 
       // finishLoading will call updateTileContent(tile, tilesetOptions), this may create new tiles
-      LoadTileListSubBatch.addTileUnqiueFromSrc(pTile, TileList);
+      LoadTileListSubBatch.AddTileUnqiueFromSrc(pTile, TileList);
     }
   }
 
@@ -200,7 +200,7 @@ void ToStdVector_Copy(std::vector<T>& Out, const TArray<T>& Data)
   }
 }
 
-void FVrdCesiumTilesetLoader::_loadTileBatchEnd(Tile* RootTile_, Tileset* Tileset_)
+void FVrdCesiumTilesetLoader::_LoadTileBatchEnd(Tile* RootTile_, Tileset* Tileset_)
 {
   if (Mode == EVrdTilesetLoaderMode::SaveTile)
   {
@@ -208,23 +208,23 @@ void FVrdCesiumTilesetLoader::_loadTileBatchEnd(Tile* RootTile_, Tileset* Tilese
     VrdTileset->ClearCachedTiles();
 
     // if unload parent, if may affect the flatten tileList
-    unLoadTileListIfLeaf(LoadTileListBatch);
-    unLoadTileListIfLeaf(LoadTileListSubBatch);
+    UnLoadTileListIfLeaf(LoadTileListBatch);
+    UnLoadTileListIfLeaf(LoadTileListSubBatch);
   }
   else if (Mode == EVrdTilesetLoaderMode::Render)
   {
     check(VrdTileset);
 
     std::vector<Tile*> Tiles;
-    ToStdVector_Copy(Tiles, LoadTileListBatch.getTiles());
+    ToStdVector_Copy(Tiles, LoadTileListBatch.GetTiles());
     //VrdTileset->updateLastViewUpdateResultState()
     VrdTileset->showTilesToRender(Tiles);
 
-    ToStdVector_Copy(Tiles, LoadTileListSubBatch.getTiles());
+    ToStdVector_Copy(Tiles, LoadTileListSubBatch.GetTiles());
     VrdTileset->showTilesToRender(Tiles);
 
-    LoadTileListBatch.clear();
-    LoadTileListSubBatch.clear();
+    LoadTileListBatch.Clear();
+    LoadTileListSubBatch.Clear();
   }
 
   if (LastLoadedTileCount >= TileList.Num())
@@ -238,20 +238,20 @@ void FVrdCesiumTilesetLoader::_loadTileBatchEnd(Tile* RootTile_, Tileset* Tilese
   LogBatchInfo();
 }
 
-void FVrdCesiumTilesetLoader::_loadTilesetOnCompleted(Tile* RootTile_, Tileset* Tileset_)
+void FVrdCesiumTilesetLoader::_LoadTilesetOnCompleted(Tile* RootTile_, Tileset* Tileset_)
 {
   LogBatchInfo();
   LoadingState = EVrdTilesetLoadingState::Completed;
 }
 
-void FVrdCesiumTilesetLoader::_loadTilesetCompleted(Tile* RootTile_, Tileset* Tileset_)
+void FVrdCesiumTilesetLoader::_LoadTilesetCompleted(Tile* RootTile_, Tileset* Tileset_)
 {
   
 }
 
-void FVrdCesiumTilesetLoader::unLoadTileListIfLeaf(FCesiumTileList& TileList_)
+void FVrdCesiumTilesetLoader::UnLoadTileListIfLeaf(FCesiumTileList& TileList_)
 {
-  for (auto* Tile : TileList_.getTiles())
+  for (auto* Tile : TileList_.GetTiles())
   {
     bool bIsLeaf = Tile->getChildren().empty();
     if (bIsLeaf)
@@ -259,7 +259,7 @@ void FVrdCesiumTilesetLoader::unLoadTileListIfLeaf(FCesiumTileList& TileList_)
       pTilesetContentManager->unloadTileContent(*Tile);
     }
   }
-  TileList_.clear();
+  TileList_.Clear();
 }
 
 int32 FVrdCesiumTilesetLoader::GetTotalBatchCount() const { return FMath::CeilToInt(TileList.Num() / (float)BatchCount); }

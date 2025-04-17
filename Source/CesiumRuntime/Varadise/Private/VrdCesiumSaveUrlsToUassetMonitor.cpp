@@ -24,19 +24,19 @@ void AVrdCesiumSaveUrlsToUassetMonitor::RequestSaveUrlsToUasset(const TArray<FSt
 {
   if (InUrls.IsEmpty())
   {
-    IsSaveUrlsToUassetInProgress = false;
+    bIsSaveUrlsToUassetInProgress = false;
     return;
   }
 
   if (Tileset)
   {
     Tileset->ResetSaveUrlToUassetState();
-    IsSaveUrlsToUassetInProgress = true;
-    IsCloseUnrealAfterCompleted = IsCloseUnrealAfterCompleted_;
+    bIsSaveUrlsToUassetInProgress = true;
+    bIsCloseUnrealAfterCompleted = IsCloseUnrealAfterCompleted_;
     bIsWaitMeshPostprocessing = bIsWaitMeshPostprocessing_;
     Urls = InUrls;
     SaveDir = InSaveDir;
-    curUrlIndex = 0;
+    CurUrlIndex = 0;
   }
 
   TilesetLoader.Reset();
@@ -69,7 +69,7 @@ void AVrdCesiumSaveUrlsToUassetMonitor::Tick(float DeltaTime)
 
   if (isTestSaveUrlsToUasset)
   {
-    RequestSaveUrlsToUasset(Urls, SaveDir, bIsWaitMeshPostprocessing, IsCloseUnrealAfterCompleted);
+    RequestSaveUrlsToUasset(Urls, SaveDir, bIsWaitMeshPostprocessing, bIsCloseUnrealAfterCompleted);
     isTestSaveUrlsToUasset = false;
   }
 
@@ -78,7 +78,7 @@ void AVrdCesiumSaveUrlsToUassetMonitor::Tick(float DeltaTime)
     CancelSaveUrlsToUasset();
   }
 
-  if (IsSaveUrlsToUassetInProgress)
+  if (bIsSaveUrlsToUassetInProgress)
   {
     SaveUrlsToUassetUpdate(DeltaTime);
   }
@@ -114,8 +114,9 @@ void AVrdCesiumSaveUrlsToUassetMonitor::SaveAllPackages(bool bIsDitryOnly)
 
 void AVrdCesiumSaveUrlsToUassetMonitor::SaveUrlsToUassetUpdate(float DeltaTime)
 {
-  bool IsCompleted = curUrlIndex >= Urls.Num();
-  if (IsCompleted) {
+  bool IsCompleted = CurUrlIndex >= Urls.Num();
+  if (IsCompleted)
+  {
     if (bIsWaitMeshPostprocessing)
     {
       bool bIsMeshPostprocessingCompleted = true;
@@ -138,7 +139,7 @@ void AVrdCesiumSaveUrlsToUassetMonitor::SaveUrlsToUassetUpdate(float DeltaTime)
     }
 
     SaveAllPackages();
-    if (IsCloseUnrealAfterCompleted)
+    if (bIsCloseUnrealAfterCompleted)
     {
       if (GEngine && GEngine->AssetManager/* && !GEngine->AssetManager->GetAssetRegistry().IsLoadingAssets()*/)
       {
@@ -147,7 +148,7 @@ void AVrdCesiumSaveUrlsToUassetMonitor::SaveUrlsToUassetUpdate(float DeltaTime)
       }
     }
 
-    IsSaveUrlsToUassetInProgress = false;
+    bIsSaveUrlsToUassetInProgress = false;
     return;
   }
 
@@ -159,8 +160,8 @@ void AVrdCesiumSaveUrlsToUassetMonitor::SaveUrlsToUassetUpdate(float DeltaTime)
 
   if (Tileset->GetIsSaveUrlToUassetCompleted() || TilesetLoader.IsCompleted())
   {
-    UE_LOG(LogTemp, Warning, TEXT("*** cesium load url (%d/%d) completed, url : [%s]"), curUrlIndex + 1, Urls.Num(), *Urls[curUrlIndex]);
-    curUrlIndex++;
+    UE_LOG(LogTemp, Warning, TEXT("*** cesium load url (%d/%d) completed, url : [%s]"), CurUrlIndex + 1, Urls.Num(), *Urls[CurUrlIndex]);
+    CurUrlIndex++;
     TilesetLoader.Reset();
     Tileset->ResetSaveUrlToUassetState();
     SaveAllPackages();
@@ -171,8 +172,8 @@ void AVrdCesiumSaveUrlsToUassetMonitor::SaveUrlsToUassetUpdate(float DeltaTime)
   }
   else if (Tileset->GetIsSaveUrlToUassetReady())
   {
-    Tileset->SaveUrlToUasset(Urls[curUrlIndex], SaveDir);
-    TilesetLoader.RequestLoadTileset(Tileset, Urls[curUrlIndex], LoadBatchCount, TilesetTimeout, EVrdTilesetLoaderMode::SaveTile);
+    Tileset->SaveUrlToUasset(Urls[CurUrlIndex], SaveDir);
+    TilesetLoader.RequestLoadTileset(Tileset, Urls[CurUrlIndex], LoadBatchCount, TilesetTimeout, EVrdTilesetLoaderMode::SaveTile);
   }
 
   TilesetLoader.Tick(DeltaTime);

@@ -22,16 +22,27 @@
 #include <MaterialDomain.h>
 #include <Materials/MaterialInstanceDynamic.h>
 
+#include <Kismet/GameplayStatics.h>
+#include <Kismet/KismetSystemLibrary.h>
+
+#include <Editor/UnrealEd/Public/EditorViewportClient.h>
+#include <Editor/UnrealEd/Public/LevelEditorViewport.h>
+
 #include "vrdCesium_Common.generated.h"
+
+#define VRD_CESIUM_DEBUG 0
 
 #ifndef CESIUMRUNTIME_API
   #define CESIUMRUNTIME_API
 #endif // undef CESIUMRUNTIME_API
 
-
 class Cesium3DTilesSelection::Tile;
 class UCesiumGltfComponent;
 
+/*
+* cache cesium (csm) tile for furter process
+* probably legacy
+*/
 UCLASS()
 class CESIUMRUNTIME_API UCachedTile : public UObject
 {
@@ -40,27 +51,44 @@ public:
   using CsmTile = Cesium3DTilesSelection::Tile;
 
 public:
-  UPROPERTY(VisibleAnywhere) FString name;
-  const CsmTile* tile = nullptr;
-  UPROPERTY(VisibleAnywhere) UCesiumGltfComponent* gltfComp = nullptr;
-  UPROPERTY(VisibleAnywhere) UStaticMeshComponent* meshComp = nullptr;
+  const CsmTile* Tile = nullptr;
+
+  UPROPERTY(VisibleAnywhere)
+  FString Name;
+
+  UPROPERTY(VisibleAnywhere)
+  UCesiumGltfComponent* GltfComp = nullptr;
+
+  UPROPERTY(VisibleAnywhere)
+  UStaticMeshComponent* MeshComp = nullptr;
 };
 
+/*
+* save transform info and its corresponding mesh 
+* probably legacy
+*/
 USTRUCT()
 struct CESIUMRUNTIME_API FTileMesh
 {
 	GENERATED_BODY()
 public:
-  UPROPERTY(VisibleAnywhere) TObjectPtr<UStaticMesh>	mesh		= nullptr;
-  UPROPERTY(VisibleAnywhere) FTransform					transform;
+  UPROPERTY(VisibleAnywhere)
+  TObjectPtr<UStaticMesh>	Mesh = nullptr;
+
+  UPROPERTY(VisibleAnywhere)
+  FTransform Transform;
 };
 
+/*
+* spwan all tile set with the transform by the loaded name, for debug purpose
+*/
 UCLASS()
 class CESIUMRUNTIME_API UTileMeshes : public UDataAsset
 {
 	GENERATED_BODY()
 public:
-	UPROPERTY(VisibleAnywhere) TMap<FName, FTileMesh> tileMeshes;
+	UPROPERTY(VisibleAnywhere)
+  TMap<FName, FTileMesh> tileMeshes;
 
 public:
   static AActor* SpwanMeshActor(UWorld* World, UStaticMesh* Mesh, const FTransform& Transform);
@@ -101,7 +129,7 @@ public:
 
 struct CESIUMRUNTIME_API InputUtil
 {
-    static bool isLeftMouseDown(const UObject* WorldContextObject, int32 PlayerIndex = 0)
+    static bool IsLeftMouseDown(const UObject* WorldContextObject, int32 PlayerIndex = 0)
     {
         if (!WorldContextObject)
         {
@@ -116,3 +144,36 @@ struct CESIUMRUNTIME_API InputUtil
         return playerCtrl->IsInputKeyDown(EKeys::LeftMouseButton);
     }
 };
+
+inline bool DeprojectMousePosToWorldByEditorViewport(FVector& outWorldPos, FVector& outWorldDir)
+{
+	//auto* client = Cast<FEditorViewportClient>(GEditor->GetActiveViewport()->GetClient());
+	auto* client = GLastKeyLevelEditingViewportClient;
+	if (!client)
+		return false;
+	
+	FIntPoint mousePos;
+	mousePos.X = client->GetCachedMouseX();
+	mousePos.Y = client->GetCachedMouseY();
+
+	FSceneViewFamily viewFamily = FSceneViewFamily::ConstructionValues(client->Viewport, client->GetScene(), client->EngineShowFlags);
+	FSceneView* culScene = client->CalcSceneView(&viewFamily);
+
+	culScene->DeprojectFVector2D(mousePos, outWorldPos, outWorldDir);
+	return true;
+}
+
+inline void LineTrace_Editor(FHitResult& OutHit, UWorld* world)
+{
+	check(world);
+	FVector worldPos, worldDir;
+	bool isSuccess = DeprojectMousePosToWorldByEditorViewport(worldPos, worldDir);
+	if (!isSuccess)
+		return;
+
+	TArray<TEnumAsByte<EObjectTypeQuery>> objectTypes;
+	objectTypes.Add(UEngineTypes::ConvertToObjectType(ECC_WorldStatic));
+
+	FHitResult& hit = OutHit;
+	UKismetSystemLibrary::LineTraceSingleForObjects(world, worldPos, worldPos + worldDir * 9999.0f, objectTypes, true, {}, EDrawDebugTrace::None, hit, true);
+}

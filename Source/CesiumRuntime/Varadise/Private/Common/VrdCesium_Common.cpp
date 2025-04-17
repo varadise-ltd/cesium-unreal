@@ -244,7 +244,7 @@ void UTileMeshes::SpwanAllToWorld(UWorld* World)
     if (idx == 1742) {
       UE_LOG(LogTemp, Warning, TEXT("spwan all idx: %d"), idx);
     }
-    AddMeshComponent(Actor, e.Value.mesh, e.Value.transform);
+    AddMeshComponent(Actor, e.Value.Mesh, e.Value.Transform);
     idx++;
 	}
 }

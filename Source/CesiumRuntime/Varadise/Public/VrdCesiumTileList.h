@@ -7,6 +7,10 @@
 
 class AVrdCesium3DTilesetBase;
 
+/*
+* useful container class for batch load cesium tiles
+* only load those are unqiue (not yet loaded before)
+*/
 class FCesiumTileList 
 {
   using Tile = Cesium3DTilesSelection::Tile;
@@ -15,37 +19,41 @@ public:
   FCesiumTileList() = default;
 
 public:
-  void clear()
+  void Clear()
   {
     Tiles.Empty();
     TileSet.Empty();
   }
 
-  void addTile(Tile* tile) {
+  void AddTile(Tile* tile)
+  {
 
     Tiles.Add(tile);
     TileSet.Add(tile);
 
     auto children = tile->getChildren();
     for (auto& child : children) {
-      addTile(&child);
+      AddTile(&child);
     }
   }
 
-  void addTileUnqiue(Tile* tile) {
+  void AddTileUnqiue(Tile* tile)
+  {
 
-    if (!TileSet.Find(tile)) {
+    if (!TileSet.Find(tile))
+    {
       Tiles.Add(tile);
       TileSet.Add(tile);
     }
 
     auto children = tile->getChildren();
-    for (auto& child : children) {
-      addTileUnqiue(&child);
+    for (auto& child : children)
+    {
+      AddTileUnqiue(&child);
     }
   }
   
-  void addTileUnqiueFromSrc(Tile* tile, const FCesiumTileList& TileList) {
+  void AddTileUnqiueFromSrc(Tile* tile, const FCesiumTileList& TileList) {
 
     if (!TileList.Find(tile)) {
       Tiles.Add(tile);
@@ -53,24 +61,29 @@ public:
     }
 
     auto children = tile->getChildren();
-    for (auto& child : children) {
-      addTileUnqiueFromSrc(&child, TileList);
+    for (auto& child : children)
+    {
+      AddTileUnqiueFromSrc(&child, TileList);
     }
   }
 
-  void addRange(const TArray<Tile*>& SrcTiles) {
+  void AddRange(const TArray<Tile*>& SrcTiles)
+  {
     Tiles.Reserve(SrcTiles.Num());
     TileSet.Reserve(SrcTiles.Num());
 
-    for (auto* tile : SrcTiles) {
+    for (auto* tile : SrcTiles)
+    {
       Tiles.Add(tile);
       TileSet.Add(tile);
     }
   }
   
-  void addRange(const TArray<Tile*>& SrcTiles, int32 SrcIndex, uint32 Count) {
+  void AddRange(const TArray<Tile*>& SrcTiles, int32 SrcIndex, uint32 Count)
+  {
     
-    if (SrcIndex >= SrcTiles.Num()) {
+    if (SrcIndex >= SrcTiles.Num())
+    {
       return;
     }
 
@@ -85,14 +98,25 @@ public:
     }
   }
 
-  TArray<Tile*>& getTiles() {
+  TArray<Tile*>& GetTiles()
+  {
     return this->Tiles;
   }
 
-  int32 Num() const { return this->Tiles.Num(); }
-  bool IsEmpty() const { return this->Tiles.IsEmpty(); }
+  int32 Num() const
+  {
+    return this->Tiles.Num();
+  }
 
-  Tile*const * Find(Tile* tile) const { return TileSet.Find(tile); }
+  bool IsEmpty() const
+  {
+    return this->Tiles.IsEmpty();
+  }
+
+  Tile*const * Find(Tile* tile) const
+  {
+    return TileSet.Find(tile);
+  }
 
 private:
   TArray<Tile*> Tiles;

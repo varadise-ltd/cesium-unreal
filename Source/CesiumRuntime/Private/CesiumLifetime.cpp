@@ -34,19 +34,12 @@ CesiumLifetime::destroyComponentRecursively(USceneComponent* pComponent) {
     return;
   }
 
-  if (auto* pMesh = Cast<UStaticMeshComponent>(pComponent)) {
-      pMesh->SetStaticMesh(nullptr);
-    }
-
   if (pComponent->IsRegistered()) {
     pComponent->UnregisterComponent();
   }
 
   TArray<USceneComponent*> children = pComponent->GetAttachChildren();
   for (USceneComponent* pChild : children) {
-    if (auto* pMesh = Cast<UStaticMeshComponent>(pChild)) {
-      pMesh->SetStaticMesh(nullptr);
-    }
     destroyComponentRecursively(pChild);
   }
 

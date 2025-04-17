@@ -34,8 +34,10 @@ public:
   uint8 bIsWaitMeshPostprocessing : 1;
 
   UPROPERTY(EditAnywhere, Transient)
-  uint8 IsCloseUnrealAfterCompleted : 1;
+  uint8 bIsCloseUnrealAfterCompleted : 1;
 
+  #if 1
+  
   UPROPERTY(EditAnywhere, Transient)
   bool isTestSaveUrlsToUasset = false;     // temporary
   
@@ -43,8 +45,10 @@ public:
   bool isCancelSaveUrlsToUasset = false;     // temporary
   
   // TODO: remove
-  UPROPERTY(EditAnywhere) uint32 LoadCachedMeshCbCounter = 0;
+  UPROPERTY(EditAnywhere)
+  uint32 LoadCachedMeshCbCounter = 0;
 
+  #endif // 1
 
 public:
   AVrdCesiumSaveUrlsToUassetMonitor();
@@ -69,8 +73,10 @@ protected:
 private:
   UPROPERTY(EditAnywhere)
   AVrdCesium3DTilesetBase* Tileset = nullptr;
-  uint8 IsSaveUrlsToUassetInProgress  : 1;
 
-  int32 curUrlIndex = 0;
+  uint8 bIsSaveUrlsToUassetInProgress  : 1;
+
+  int32 CurUrlIndex = 0;
+
   FVrdCesiumTilesetLoader TilesetLoader;
 };

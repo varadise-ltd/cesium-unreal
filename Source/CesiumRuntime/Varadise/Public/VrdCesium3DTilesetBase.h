@@ -15,7 +15,13 @@ class UCesiumGltfComponent;
 class AVrdCesium3DTilesetBase;
 
 UENUM()
-enum class ESaveUrlToUassetState : uint8 { None, InProgress, Completed, _Count };
+enum class ESaveUrlToUassetState : uint8
+{
+  None,
+  InProgress,
+  Completed,
+  _Count
+};
 
 UCLASS()
 class CESIUMRUNTIME_API AVrdCesium3DTilesetBase : public ACesium3DTileset 
@@ -25,24 +31,35 @@ public:
 	using CsmTile = Cesium3DTilesSelection::Tile;
 
 public:
-  UPROPERTY(EditAnywhere) bool isLoadFromPak = false;		      // temporary
-  UPROPERTY(EditAnywhere) UTileMeshes* tileMeshes = nullptr;  // temporary
+  UPROPERTY(EditAnywhere)
+  bool bIsLoadFromPak = false;            // temporary
+  
+  UPROPERTY(EditAnywhere)
+  UTileMeshes* tileMeshes = nullptr;      // temporary
 
-  UPROPERTY(EditAnywhere, Transient) bool isTestSaveUrlToUasset = false;     // temporary
-  UPROPERTY(EditAnywhere, Transient) bool isTestLoadAndSaveAllTiles = false;     // temporary
-  UPROPERTY(EditAnywhere) FString SaveUrl = "";                              // temporary
+  UPROPERTY(EditAnywhere, Transient)
+  bool bIsTestSaveUrlToUasset = false;     // temporary
 
-  UPROPERTY(EditAnywhere) FString SaveUrlDir = "";
-  UPROPERTY(EditAnywhere, Transient) uint8   IsLoadFromUasset               : 1;
+  UPROPERTY(EditAnywhere)
+  FString SaveUrl = "";                    // temporary
 
-  UPROPERTY(EditAnywhere, Transient) ESaveUrlToUassetState SaveUrlToUassetState = ESaveUrlToUassetState::None;
-  //UPROPERTY(EditAnywhere, Transient) uint8   IsSaveUrlToUassetInProgress    : 1;
-  //UPROPERTY(EditAnywhere, Transient) uint8   IsSaveUrlToUassetCompleted     : 1;
+  UPROPERTY(EditAnywhere)
+  FString SaveUrlDir = "";
 
-  UPROPERTY(EditAnywhere) FVrdCesiumCachedMeshLoader CachedMeshLoader;
-  UPROPERTY() FVrdCesiumTilesetLoader TilesetLoader;
-  UPROPERTY(EditAnywhere) uint32 LoadBatchCount = 20;
-  UPROPERTY(EditAnywhere) float TilesetTimeout = 10.0;
+  UPROPERTY(EditAnywhere, Transient)
+  ESaveUrlToUassetState SaveUrlToUassetState = ESaveUrlToUassetState::None;
+
+  UPROPERTY(EditAnywhere)
+  FVrdCesiumCachedMeshLoader CachedMeshLoader;
+
+  UPROPERTY()
+  FVrdCesiumTilesetLoader TilesetLoader;
+
+  UPROPERTY(EditAnywhere)
+  uint32 LoadBatchCount = 20;
+
+  UPROPERTY(EditAnywhere)
+  float TilesetTimeout = 10.0;
 
   UPROPERTY(
       EditAnywhere,
@@ -50,7 +67,11 @@ public:
       BlueprintSetter = SetForceRenderAllTile)
   bool bForceRenderAllTile = false;
 
-public:
+  /*
+  * Test nante code
+  */
+#if 0
+  public:
   UPROPERTY(EditAnywhere) bool isTestNanite = false;
   UPROPERTY(EditAnywhere) bool isClearTestNanite = false;
   UPROPERTY(EditAnywhere) uint32 testNaniteCount = 0;
@@ -58,6 +79,7 @@ public:
   UPROPERTY(EditAnywhere) UStaticMesh* testNaniteMesh = nullptr;
   UPROPERTY(EditAnywhere) TArray<AActor*> testNaniteActors;
   void testNanite();
+#endif // 0
 
 public:
     static void SetupStaticMesh(bool bIsInit, bool createNavCollision, UStaticMesh* pStaticMesh, UStaticMeshComponent* pMesh, UMaterialInstanceDynamic* pMaterial, UCesiumGltfComponent* pGltf, TSharedPtr<Chaos::FTriangleMeshImplicitObject, ESPMode::ThreadSafe>& pCollisionMesh);
@@ -67,23 +89,43 @@ public:
   virtual ~AVrdCesium3DTilesetBase();
 
 public:
-  UFUNCTION(BlueprintCallable) void ResetSaveUrlToUassetState();
-  UFUNCTION(BlueprintCallable) bool SaveUrlToUasset(const FString& InUrl, const FString& InSaveDir);
-  UFUNCTION(BlueprintCallable) bool DeleteUrlUasset(const FString& InUrl, const FString& InDir);
+  void GetMeshNameByMouseLineTrace(FString& OutName);
 
-  UFUNCTION(BlueprintCallable) bool GetIsSaveUrlToUassetReady() const;
-  UFUNCTION(BlueprintCallable) bool GetIsSaveUrlToUassetInProgress() const;
-  UFUNCTION(BlueprintCallable) bool GetIsSaveUrlToUassetCompleted() const;
+public:
+  UFUNCTION(BlueprintCallable)
+  void ResetSaveUrlToUassetState();
 
-  UFUNCTION() void SaveCachedTilesToUasset();
+  UFUNCTION(BlueprintCallable)
+  bool SaveUrlToUasset(const FString& InUrl, const FString& InSaveDir);
+
+  UFUNCTION(BlueprintCallable)
+  bool DeleteUrlUasset(const FString& InUrl, const FString& InDir);
+
+  UFUNCTION(BlueprintCallable)
+  bool GetIsSaveUrlToUassetReady() const;
+
+  UFUNCTION(BlueprintCallable)
+  bool GetIsSaveUrlToUassetInProgress() const;
+
+  UFUNCTION(BlueprintCallable)
+  bool GetIsSaveUrlToUassetCompleted() const;
+
+  UFUNCTION()
+  void SaveCachedTilesToUasset();
 
   UCachedTile* CacheTileStaticMesh(const CesiumGltf::Model& Model, const FString& Name, TUniquePtr<class FStaticMeshRenderData>&& RenderData);
   //UStaticMesh* SaveTileStaticMesh(const CesiumGltf::Model& Model, FStaticMeshRenderData* RenderData);
   void SaveTileToUasset(UCachedTile* Tile, const FString& Outdir, const FMeshBuildSettings& BuildSettings, const FMeshNaniteSettings& NaniteSettings, FSavePackageArgs SaveArgs);
 
-  public:
-  UFUNCTION(BlueprintCallable, BlueprintGetter) bool GetForceRenderAllTile() const { return bForceRenderAllTile; }
-  UFUNCTION(BlueprintCallable, BlueprintSetter) void SetForceRenderAllTile(bool bValue);
+public:
+  UFUNCTION(BlueprintCallable, BlueprintGetter)
+  bool GetForceRenderAllTile() const
+  {
+    return bForceRenderAllTile;
+  }
+
+  UFUNCTION(BlueprintCallable, BlueprintSetter)
+  void SetForceRenderAllTile(bool bValue);
 
 public:
   static FString GetMeshUri(const CesiumGltf::Model& Model);
@@ -120,11 +162,14 @@ protected:
   virtual bool ShouldTickIfViewportsOnly() const override;
 	virtual void OnConstruction(const FTransform& transform) override;
 
+	virtual void EditorKeyPressed(FKey Key, EInputEvent Event) override;
+
 protected:	
-	UPROPERTY(VisibleAnywhere) TArray<UCachedTile*> _cachedTiles;
+	UPROPERTY(VisibleAnywhere)
+  TArray<UCachedTile*> _CachedTiles;
 };
 
 inline TArray<UCachedTile*>& AVrdCesium3DTilesetBase::GetCachedTiles()
 {
-  return _cachedTiles;
+  return _CachedTiles;
 }
