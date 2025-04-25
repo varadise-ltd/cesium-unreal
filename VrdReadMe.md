@@ -1,7 +1,13 @@
 # Cesium Nanite
 
 ## How to build
+- *** git clone https://github.com/varadise-ltd/cesium-unreal.git ***
+- no need to --recurse, then *** git checkout dev_varadise ***
 - run build.bat
+
+### varadise-platform-v-2
+- git checkout feat/cesium-nanite
+- delete local cesium in engine (eg. C:\Program Files\Epic Games\UE_5.3\Engine\Plugins\Marketplace)
 
 ## Features
 - save cesium url as nanite asset

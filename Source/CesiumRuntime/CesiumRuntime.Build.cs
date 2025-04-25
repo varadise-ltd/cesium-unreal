@@ -18,7 +18,7 @@ public class CesiumRuntime : ModuleRules
             }
         );
 
-    PrivateIncludePaths.AddRange(
+        PrivateIncludePaths.AddRange(
             new string[] {
               Path.Combine(GetModuleDirectory("Renderer"), "Private")
             }
@@ -158,10 +158,8 @@ public class CesiumRuntime : ModuleRules
         CppStandard = CppStandardVersion.Cpp20;
         bEnableExceptions = true;
 
-        if (Target.Configuration == UnrealTargetConfiguration.Shipping)
-        {
-            this.bUseUnity = false;
-        }
+        
+        bUseUnity = true;                                     // fix build error bug when add cesium to Plugins
         DefaultBuildSettings = BuildSettingsVersion.V4;       // fix build error bug when add cesium to Plugins
         PublicIncludePaths.AddRange(
             new string[] {
