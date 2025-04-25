@@ -6,6 +6,32 @@
 @rem change current directory
 @cd %~dp0
 
+set CMAKE_TARGET_VERSION_MAJOR=3
+
+@echo off
+for /f "tokens=3" %%i in ('cmake --version ^| findstr /b "cmake version"') do set VERSION=%%i
+if not defined VERSION (
+    echo Error: Unable to determine CMake version.
+    exit /b 1
+)
+
+:: Extract major version
+for /f "tokens=1 delims=." %%a in ("%VERSION%") do set CMAKE_VERSION_MAJOR=%%a
+if not defined CMAKE_VERSION_MAJOR (
+    echo Error: Invalid CMake version format.
+    exit /b 1
+)
+
+if %CMAKE_VERSION_MAJOR% NEQ %CMAKE_TARGET_VERSION_MAJOR% (
+    echo only cmake version %CMAKE_TARGET_VERSION_MAJOR% is supported
+    exit /b 1
+)
+else (
+    echo check cmake version success
+)
+
+@echo on
+
 git checkout dev_varadise
 
 git config --list --local
